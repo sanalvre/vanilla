@@ -226,3 +226,108 @@ class TestRunsEndpoint:
         assert len(response.json()["runs"]) == 2
         response = client.get("/runs?limit=2&offset=4")
         assert len(response.json()["runs"]) == 1
+
+
+# ─── System Capabilities Endpoint ──────────────────────────────────
+
+class TestCapabilitiesEndpoint:
+    def test_returns_gpu_info(self, client):
+        response = client.get("/system/capabilities")
+        assert response.status_code == 200
+        data = response.json()
+        assert "gpu" in data
+        assert "gpu_type" in data
+        assert data["gpu_type"] in ("cuda", "mps", "none")
+        assert "python_version" in data
+
+
+# ─── Ingestion Endpoints ──────────────────────────────────────────
+
+class TestIngestFileEndpoint:
+    def test_requires_vault_initialized(self, client):
+        """Ingest should fail if vault not initialized."""
+        # Ensure vault is not initialized
+        app_config.clean_vault_path = None
+        response = client.post("/ingest/file?file_path=/test.pdf")
+        assert response.status_code == 400
+        assert "not initialized" in response.json()["detail"].lower()
+
+    def test_rejects_unknown_file_type(self, client, tmp_path):
+        app_config.clean_vault_path = str(tmp_path / "clean-vault")
+        response = client.post("/ingest/file?file_path=/test.png")
+        assert response.status_code == 400
+        assert "unsupported" in response.json()["detail"].lower()
+
+    def test_creates_job_for_markdown(self, client, tmp_path):
+        app_config.clean_vault_path = str(tmp_path / "clean-vault")
+        (tmp_path / "clean-vault" / "raw").mkdir(parents=True)
+
+        md_file = tmp_path / "test.md"
+        md_file.write_text("# Test\n\nContent")
+
+        response = client.post(f"/ingest/file?file_path={md_file}")
+        assert response.status_code == 200
+        data = response.json()
+        assert "job_id" in data
+        assert data["job_id"].startswith("ingest_")
+
+    def test_creates_job_for_pdf(self, client, tmp_path):
+        app_config.clean_vault_path = str(tmp_path / "clean-vault")
+        (tmp_path / "clean-vault" / "raw").mkdir(parents=True)
+
+        pdf_file = tmp_path / "paper.pdf"
+        pdf_file.write_bytes(b"%PDF-1.4 dummy")
+
+        response = client.post(f"/ingest/file?file_path={pdf_file}")
+        assert response.status_code == 200
+        assert "job_id" in response.json()
+
+
+class TestIngestUrlEndpoint:
+    def test_requires_vault_initialized(self, client):
+        app_config.clean_vault_path = None
+        response = client.post("/ingest/url", json={"url": "https://example.com"})
+        assert response.status_code == 400
+
+    def test_creates_job_for_url(self, client, tmp_path):
+        app_config.clean_vault_path = str(tmp_path / "clean-vault")
+        (tmp_path / "clean-vault" / "raw").mkdir(parents=True)
+
+        response = client.post("/ingest/url", json={"url": "https://example.com"})
+        assert response.status_code == 200
+        assert "job_id" in response.json()
+
+
+class TestIngestStatusEndpoint:
+    def test_nonexistent_job(self, client):
+        response = client.get("/ingest/status/fake_job_id")
+        assert response.status_code == 404
+
+    def test_returns_job_status(self, client, tmp_path):
+        # Create a job by calling ingest endpoint
+        app_config.clean_vault_path = str(tmp_path / "clean-vault")
+        (tmp_path / "clean-vault" / "raw").mkdir(parents=True)
+
+        md_file = tmp_path / "test.md"
+        md_file.write_text("# Test")
+
+        create_resp = client.post(f"/ingest/file?file_path={md_file}")
+        job_id = create_resp.json()["job_id"]
+
+        # Poll status
+        response = client.get(f"/ingest/status/{job_id}")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["job_id"] == job_id
+        assert data["source_type"] == "md"
+        assert data["status"] in ("pending", "processing", "complete", "error")
+
+
+class TestIngestActiveEndpoint:
+    def test_returns_active_jobs(self, client, tmp_path):
+        app_config.clean_vault_path = str(tmp_path / "clean-vault")
+        (tmp_path / "clean-vault" / "raw").mkdir(parents=True)
+
+        response = client.get("/ingest/active")
+        assert response.status_code == 200
+        assert "jobs" in response.json()

@@ -4,6 +4,40 @@ Reverse-chronological log of all development activity. This is the primary conte
 
 ---
 
+## 2026-04-13 — [Phase 3.0] Ingestion Pipeline
+
+**What changed:**
+- `sidecar/services/ingestion/normalizer.py` — routing logic for MD passthrough, PDF via Marker, URL via Firecrawl; `detect_source_type()`, `slugify()`, `extract_title_from_markdown()` (with proper YAML frontmatter skipping), `ingest_markdown()`, `ingest_pdf()`, `ingest_url()`
+- `sidecar/services/ingestion/marker_service.py` — async wrapper around Marker PDF→MD conversion running in executor thread
+- `sidecar/services/ingestion/firecrawl_service.py` — Firecrawl API client with `_fetch_simple()` HTTP fallback for basic HTML→markdown when Firecrawl unavailable
+- `sidecar/services/ingestion/job_queue.py` — in-memory async job queue with `IngestJobQueue` singleton, status tracking, cleanup of old completed jobs
+- `sidecar/services/gpu_detect.py` — CUDA/MPS detection via torch with caching, graceful fallback when torch not installed
+- `sidecar/main.py` — 5 new endpoints: `GET /system/capabilities`, `POST /ingest/file`, `POST /ingest/url`, `GET /ingest/status/{job_id}`, `GET /ingest/active`; background task `_run_ingest_job()` runs ingestion and updates FTS5 index
+- `sidecar/models/responses.py` — added `IngestUrlRequest` Pydantic model
+- `src/api/ingest.ts` — typed API client: `ingestFile()`, `ingestUrl()`, `getIngestStatus()`, `getActiveIngests()`, `getCapabilities()`
+- `src/components/layout/DropZone.tsx` — Tauri drag-drop event listener with visual overlay ("Drop files to ingest")
+- `src/components/layout/UrlBar.tsx` — inline URL paste input with validation, loading state, Escape to close
+- `src/components/layout/IngestStatus.tsx` — sidebar job progress display with 2s polling, progress bars, error display
+- `src/App.tsx` — wired DropZone (wraps entire app), UrlBar (in top bar when initialized), IngestStatus (in sidebar), ingest job state tracking with callbacks
+
+**Decisions:**
+- PDF routing: always use Marker first (works on CPU); MinerU integration deferred to when GPU routing logic is needed at scale
+- Firecrawl service includes a simple HTTP fallback (`_fetch_simple`) that does basic HTML→markdown with BeautifulSoup, so URL ingestion works without a Firecrawl API key for simple pages
+- `extract_title_from_markdown()` properly skips YAML frontmatter blocks (--- delimited) before looking for headings
+- IngestStatus completed-job filter was buggy (`Date.now() - Date.now()` is always 0) — simplified to just hide completed jobs immediately
+- Job queue is in-memory only (not persisted to SQLite) — acceptable since ingest jobs are short-lived and the queue resets on sidecar restart
+
+**Tests:** 48 new tests added across 4 test files:
+- `tests/python/test_normalizer.py` — 30 tests: source type detection (9), slugify (7), title extraction (6), markdown ingestion (4), PDF ingestion (3), URL ingestion (1)
+- `tests/python/test_job_queue.py` — 16 tests: job lifecycle, status updates, active filtering, cleanup, unique IDs, enum values
+- `tests/python/test_gpu_detect.py` — 6 tests: no-torch, CUDA, MPS, no-GPU-with-torch, caching, dataclass
+- `tests/python/integration/test_api.py` — expanded with 10 new integration tests for /system/capabilities and all /ingest/* endpoints
+- All 157 Python tests passing, 14 TypeScript tests passing, cargo check clean
+
+**Next:** Phase 4 — Onboarding flow (API key setup, vault description, CrewAI setup crew for ontology/AGENTS.md generation)
+
+---
+
 ## 2026-04-13 — [Phase 2.0] Vault infrastructure, file watching, graph service
 
 **What changed:**

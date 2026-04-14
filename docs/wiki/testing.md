@@ -22,8 +22,11 @@ Run with: `cd sidecar && python -m pytest ../tests/python/ -v`
 | `test_paths.py` | Path normalization (Windows backslash -> forward slash, relative path extraction) |
 | `test_vault_manager.py` | Vault creation, directory structure validation, template file generation |
 | `test_repository.py` | SQLite CRUD for all tables (proposals, agent_runs, stale_articles, FTS) |
-| `test_frontmatter.py` | YAML frontmatter parsing and validation |
 | `test_graph_service.py` | graph.json read/write, source_map lookups, stale detection |
+| `test_watcher_bridge.py` | Async event debounce, force dispatch, sync-write skip, pending path tracking |
+| `test_normalizer.py` | Source type detection, slugify, title extraction, MD/PDF/URL ingestion routing |
+| `test_job_queue.py` | Job lifecycle, status updates, active filtering, cleanup, unique IDs |
+| `test_gpu_detect.py` | CUDA/MPS detection mocks, caching, torch-not-installed fallback |
 
 ## Python Integration Tests (`tests/python/integration/`)
 
@@ -31,9 +34,7 @@ Run with: `cd sidecar && python -m pytest ../tests/python/integration/ -v`
 
 | Test file | What it covers |
 |-----------|---------------|
-| `test_api.py` | All FastAPI endpoints via TestClient (request/response contracts) |
-| `test_ingestion.py` | Full file ingestion pipeline (file -> normalized .md -> FTS indexed) |
-| `test_watcher_bridge.py` | File event -> debounce queue -> pipeline trigger |
+| `test_api.py` | All FastAPI endpoints via TestClient — system, vault, ingestion, proposals, search, runs (31 tests) |
 
 ## TypeScript Tests (`tests/ts/`)
 

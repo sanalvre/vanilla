@@ -61,27 +61,42 @@ Response: { "success": true, "clean_vault_path": "...", "wiki_vault_path": "..."
 ## Ingestion
 
 ### POST /ingest/file
-Upload a file for ingestion. Returns job ID.
+Start ingestion of a local file (drag-and-drop or file picker). Requires vault to be initialized.
 ```
-Request: multipart/form-data with file field
+Query params: file_path (absolute path to file on disk)
 Response: { "job_id": "ingest_abc123" }
+Errors: 400 if vault not initialized or unsupported file type
 ```
 
 ### POST /ingest/url
-Ingest a URL (online-only).
+Ingest a URL (online-only). Requires vault to be initialized.
 ```json
 Request: { "url": "https://example.com/article" }
 Response: { "job_id": "ingest_abc123" }
+Errors: 400 if vault not initialized
 ```
 
 ### GET /ingest/status/{job_id}
 Poll ingestion job status.
 ```json
 Response: {
+  "job_id": "ingest_abc123",
   "status": "pending" | "processing" | "complete" | "error",
   "progress": 0.75,
   "output_path": "clean-vault/raw/article.md" | null,
-  "error": "..." | null
+  "error": "..." | null,
+  "source_type": "pdf" | "md" | "url"
+}
+Errors: 404 if job not found
+```
+
+### GET /ingest/active
+List all active (pending/processing) ingest jobs.
+```json
+Response: {
+  "jobs": [
+    { "job_id": "...", "status": "processing", "progress": 0.5, "source_type": "pdf" }
+  ]
 }
 ```
 

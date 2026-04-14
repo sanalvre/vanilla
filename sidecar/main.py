@@ -31,12 +31,18 @@ from models.responses import (
     VaultCreateRequest,
     VaultCreateResponse,
     FileEventRequest,
+    IngestUrlRequest,
     LastRun,
 )
 from services.vault_manager import create_vault_structure, validate_vault_structure
 from services.graph_service import load_graph, get_articles_citing
 from services.watcher_bridge import WatcherBridge, FileEvent
 from services.paths import normalize_path
+from services.gpu_detect import detect_gpu
+from services.ingestion.job_queue import ingest_queue, JobStatus
+from services.ingestion.normalizer import (
+    ingest_markdown, ingest_pdf, ingest_url, detect_source_type,
+)
 
 logger = logging.getLogger("vanilla")
 
@@ -202,6 +208,121 @@ async def vault_create(request: VaultCreateRequest):
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── System Capabilities ────────────────────────────────────────────
+
+@app.get("/system/capabilities")
+async def system_capabilities():
+    """Return hardware detection results (GPU, Python version)."""
+    import sys as _sys
+    gpu = detect_gpu()
+    return {
+        "gpu": gpu.gpu,
+        "gpu_type": gpu.gpu_type,
+        "python_version": _sys.version.split()[0],
+    }
+
+
+# ─── Ingestion Endpoints ────────────────────────────────────────────
+
+@app.post("/ingest/file")
+async def ingest_file_upload(
+    file_path: str,  # Absolute path to the file on disk
+):
+    """
+    Start ingestion of a local file (dropped onto the app or selected via dialog).
+    Returns a job ID for status polling.
+    """
+    if not config.clean_vault_path:
+        raise HTTPException(status_code=400, detail="Vault not initialized")
+
+    source_type = detect_source_type(file_path)
+    if source_type == "unknown":
+        raise HTTPException(status_code=400, detail=f"Unsupported file type: {file_path}")
+
+    job = ingest_queue.create_job(
+        source_type=source_type,
+        source_path=file_path,
+    )
+
+    # Run ingestion in background
+    asyncio.create_task(_run_ingest_job(job.job_id))
+
+    return {"job_id": job.job_id}
+
+
+@app.post("/ingest/url")
+async def ingest_url_endpoint(request: IngestUrlRequest):
+    """
+    Start ingestion of a URL. Requires internet access.
+    Returns a job ID for status polling.
+    """
+    if not config.clean_vault_path:
+        raise HTTPException(status_code=400, detail="Vault not initialized")
+
+    job = ingest_queue.create_job(
+        source_type="url",
+        source_url=request.url,
+    )
+
+    asyncio.create_task(_run_ingest_job(job.job_id))
+
+    return {"job_id": job.job_id}
+
+
+@app.get("/ingest/status/{job_id}")
+async def ingest_status(job_id: str):
+    """Poll ingestion job status."""
+    job = ingest_queue.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
+    return job.to_dict()
+
+
+@app.get("/ingest/active")
+async def ingest_active():
+    """List all active (pending/processing) ingest jobs."""
+    return {"jobs": ingest_queue.get_active_jobs()}
+
+
+async def _run_ingest_job(job_id: str) -> None:
+    """Background task that runs an ingestion job."""
+    job = ingest_queue.get_job(job_id)
+    if not job:
+        return
+
+    ingest_queue.update_job(job_id, status=JobStatus.PROCESSING, progress=0.1)
+
+    try:
+        if job.source_type == "md" and job.source_path:
+            result = await ingest_markdown(job.source_path, config.clean_vault_path)
+        elif job.source_type == "pdf" and job.source_path:
+            gpu = detect_gpu()
+            result = await ingest_pdf(job.source_path, config.clean_vault_path, gpu_available=gpu.gpu)
+        elif job.source_type == "url" and job.source_url:
+            result = await ingest_url(job.source_url, config.clean_vault_path, firecrawl_api_key=config.llm.api_key)
+        else:
+            ingest_queue.update_job(job_id, status=JobStatus.ERROR, error="Invalid job configuration")
+            return
+
+        if result.success:
+            # Update FTS index
+            repo.upsert_fts(result.output_path, "clean", result.title, result.body)
+            ingest_queue.update_job(
+                job_id,
+                status=JobStatus.COMPLETE,
+                progress=1.0,
+                output_path=result.output_path,
+            )
+            logger.info("Ingest complete: %s -> %s", job.source_path or job.source_url, result.output_path)
+        else:
+            ingest_queue.update_job(job_id, status=JobStatus.ERROR, error=result.error)
+            logger.error("Ingest failed: %s", result.error)
+
+    except Exception as e:
+        logger.error("Ingest job error: %s", e)
+        ingest_queue.update_job(job_id, status=JobStatus.ERROR, error=str(e))
 
 
 # ─── File Event Endpoints ───────────────────────────────────────────
