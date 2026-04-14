@@ -85,3 +85,28 @@ class OnboardingGenerateResponse(BaseModel):
     ontology_md: str
     agents_md: str
     suggested_categories: list[str]
+
+
+class ProposalApproveRequest(BaseModel):
+    """Request body for approving a proposal batch (currently no fields needed)."""
+    pass
+
+
+class ProposalRejectRequest(BaseModel):
+    """Request body for rejecting a proposal batch."""
+    reason: Optional[str] = None
+
+
+class ProposalActionResponse(BaseModel):
+    """Response from approve/reject endpoints."""
+    batch_id: str
+    status: str  # "approved" | "rejected"
+    articles_written: int = 0
+    errors: list[str] = []
+
+
+class RunPipelineResponse(BaseModel):
+    """Response from run-now endpoint when pipeline is triggered."""
+    run_id: Optional[str] = None
+    dispatched: int = 0
+    already_running: bool = False

@@ -4,6 +4,45 @@ Reverse-chronological log of all development activity. This is the primary conte
 
 ---
 
+## 2026-04-14 — [Phase 5.0] Main Agent Pipeline
+
+**What changed:**
+- `sidecar/agents/pipeline.py` — Full 3-step pipeline orchestrator:
+  - `AgentPipelineStatus` singleton tracks running state, current phase, run_id, total tokens
+  - `run_pipeline()` chains ingest → analysis → proposal, records agent_run in DB
+  - `ingest_step()` reads changed files, sends to LLM for topic extraction (model: `config.llm.models["ingest"]`, 2k token budget)
+  - `analysis_step()` compares ingest results against wiki graph nodes, ontology.md, AGENTS.md (always re-read from disk), stale articles; LLM returns create/update actions
+  - `proposal_step()` generates draft articles with YAML frontmatter, writes to `wiki-vault/staging/batch_{run_id}/`, creates proposal + proposal_articles DB records
+  - Token safety valve aborts if `total_tokens > max_tokens_per_run` (default 20k)
+  - Token estimation via `len(text) // 4` approximation
+- `sidecar/agents/fileback.py` — File-back agent (approval handler):
+  - `execute_fileback()` writes staging articles to `wiki-vault/concepts/`, updates graph.json (nodes, edges from wikilinks, source_map), updates index.md, records sync writes, clears stale flags, updates FTS, cleans up staging
+  - Simple frontmatter parser (no PyYAML dependency)
+  - Wikilink extraction for graph edge creation
+- `sidecar/main.py` — Major updates:
+  - `on_file_ready()` now triggers pipeline via `asyncio.create_task()` when not already running
+  - `/status` returns dynamic `agent_status` from `pipeline_status`
+  - `/agent/run-now` collects pending paths, suppresses individual triggers, runs consolidated pipeline
+  - `POST /proposals/{batch_id}/approve` triggers fileback agent
+  - `POST /proposals/{batch_id}/reject` marks batch as rejected
+  - `_suppress_pipeline_trigger` flag prevents race during force dispatch
+- `sidecar/models/responses.py` — 4 new models: ProposalApproveRequest, ProposalRejectRequest, ProposalActionResponse, RunPipelineResponse
+
+**Decisions:**
+- Pipeline runs as async task in the same process (no subprocess/worker) — simple, no IPC overhead
+- Staging lives in `wiki-vault/staging/` (consistent with vault_manager's directory structure)
+- Token counting is approximate (chars/4) — will upgrade to real litellm callback tracking when litellm is a hard dependency
+- Force dispatch uses a suppress flag to avoid N pipeline runs for N pending files — instead runs one consolidated pipeline
+
+**Tests:** 23 new tests:
+- `tests/python/test_pipeline.py` — 16 tests: JSON parsing, slugify, token estimation, status state machine, frontmatter extraction, wikilink extraction, index.md updates
+- `tests/python/integration/test_api.py` — 4 new: status reflects pipeline, approve/reject endpoint contracts
+- All 191 Python + 14 TypeScript tests passing
+
+**Next:** Phase 6 — Proposal review UI (diff viewer, approve/reject buttons, article preview)
+
+---
+
 ## 2026-04-14 — [Phase 4.0] Onboarding Flow
 
 **What changed:**

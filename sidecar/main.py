@@ -37,6 +37,10 @@ from models.responses import (
     LLMValidateResponse,
     OnboardingGenerateRequest,
     OnboardingGenerateResponse,
+    ProposalApproveRequest,
+    ProposalRejectRequest,
+    ProposalActionResponse,
+    RunPipelineResponse,
 )
 from services.vault_manager import create_vault_structure, validate_vault_structure
 from services.graph_service import load_graph, get_articles_citing
@@ -48,6 +52,8 @@ from services.ingestion.job_queue import ingest_queue, JobStatus
 from services.ingestion.normalizer import (
     ingest_markdown, ingest_pdf, ingest_url, detect_source_type,
 )
+from agents.pipeline import run_pipeline, pipeline_status
+from agents.fileback import execute_fileback
 
 logger = logging.getLogger("vanilla")
 
@@ -65,12 +71,14 @@ config = VanillaConfig.load()
 # Watcher bridge — initialized in lifespan
 watcher_bridge: Optional[WatcherBridge] = None
 
+# When True, on_file_ready skips pipeline triggering (used during force dispatch)
+_suppress_pipeline_trigger = False
+
 
 async def on_file_ready(event: FileEvent) -> None:
     """
     Callback fired when a file passes the debounce check.
-    This is where the agent pipeline will be triggered (Phase 5).
-    For now, we log it and flag stale articles.
+    Triggers the agent pipeline for the changed file.
     """
     logger.info("File ready for processing: %s (%s)", event.path, event.event_type)
 
@@ -82,6 +90,10 @@ async def on_file_ready(event: FileEvent) -> None:
         for article_path in stale_articles:
             repo.flag_stale_article(article_path, event.path)
             logger.info("Flagged stale article: %s (source changed: %s)", article_path, event.path)
+
+    # Trigger the agent pipeline if not already running and not suppressed
+    if not _suppress_pipeline_trigger and not pipeline_status.running and config.initialized:
+        asyncio.create_task(run_pipeline([event.path], config))
 
 
 @asynccontextmanager
@@ -151,9 +163,11 @@ async def status():
             tokens_used=last.get("tokens_used", 0) or 0,
         )
 
+    agent_status = "running" if pipeline_status.running else "idle"
+
     return StatusResponse(
-        agent_status="idle",  # Will be dynamic in Phase 5
-        current_phase=None,
+        agent_status=agent_status,
+        current_phase=pipeline_status.current_phase,
         last_run=last_run,
         pending_proposals=pending,
     )
@@ -351,17 +365,45 @@ async def file_event(request: FileEventRequest):
     return {"queued": queued, "pending_count": watcher_bridge.get_pending_count()}
 
 
-@app.post("/agent/run-now")
+@app.post("/agent/run-now", response_model=RunPipelineResponse)
 async def agent_run_now():
     """
     Force-trigger the agent pipeline, bypassing debounce.
-    Processes all files currently in the debounce queue.
+    Collects all pending paths from the debounce queue and runs the pipeline.
     """
     if not watcher_bridge:
         raise HTTPException(status_code=503, detail="Watcher bridge not initialized")
 
-    count = await watcher_bridge.force_dispatch_all()
-    return {"dispatched": count}
+    if pipeline_status.running:
+        return RunPipelineResponse(already_running=True, dispatched=0)
+
+    if not config.initialized:
+        raise HTTPException(status_code=400, detail="Vault not initialized")
+
+    global _suppress_pipeline_trigger
+
+    # Collect pending paths before force-dispatching
+    pending_paths = watcher_bridge.get_pending_paths()
+
+    # Suppress individual pipeline triggers during force dispatch —
+    # we will run a single consolidated pipeline afterwards.
+    _suppress_pipeline_trigger = True
+    try:
+        count = await watcher_bridge.force_dispatch_all()
+    finally:
+        _suppress_pipeline_trigger = False
+
+    if pending_paths:
+        # Launch consolidated pipeline in background
+        asyncio.create_task(run_pipeline(pending_paths, config))
+        # Give it a moment to initialise the run_id
+        await asyncio.sleep(0.05)
+        return RunPipelineResponse(
+            run_id=pipeline_status.current_run_id,
+            dispatched=len(pending_paths),
+        )
+
+    return RunPipelineResponse(dispatched=count)
 
 
 # ─── Graph Endpoints ────────────────────────────────────────────────
@@ -390,6 +432,38 @@ async def list_proposals():
     """List all pending proposal batches."""
     batches = repo.get_pending_proposals()
     return {"batches": batches}
+
+
+@app.post("/proposals/{batch_id}/approve", response_model=ProposalActionResponse)
+async def approve_proposal(batch_id: str):
+    """
+    Approve a proposal batch — triggers the file-back agent to write
+    articles from staging into wiki-vault/concepts/.
+    """
+    if not config.wiki_vault_path:
+        raise HTTPException(status_code=400, detail="Wiki vault not configured")
+
+    result = await execute_fileback(batch_id, config)
+    return ProposalActionResponse(
+        batch_id=batch_id,
+        status="approved",
+        articles_written=result["articles_written"],
+        errors=result["errors"],
+    )
+
+
+@app.post("/proposals/{batch_id}/reject", response_model=ProposalActionResponse)
+async def reject_proposal(batch_id: str, request: ProposalRejectRequest = None):
+    """
+    Reject a proposal batch — marks it as rejected and optionally records a reason.
+    """
+    repo.update_proposal_status(batch_id, "rejected")
+    logger.info(
+        "Proposal %s rejected%s",
+        batch_id,
+        f": {request.reason}" if request and request.reason else "",
+    )
+    return ProposalActionResponse(batch_id=batch_id, status="rejected")
 
 
 # ─── Run History ────────────────────────────────────────────────────

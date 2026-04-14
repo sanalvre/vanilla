@@ -366,3 +366,41 @@ class TestOnboardingGenerateEndpoint:
         """Should 422 if required fields missing."""
         response = client.post("/onboarding/generate-ontology", json={})
         assert response.status_code == 422
+
+
+# ─── Status reflects pipeline state ──────────────────────────────
+
+class TestStatusReflectsPipeline:
+    def test_idle_by_default(self, client):
+        response = client.get("/status")
+        data = response.json()
+        assert data["agent_status"] == "idle"
+        assert data["current_phase"] is None
+
+
+# ─── Proposal Approve/Reject Endpoints ────────────────────────────
+
+class TestProposalApproveEndpoint:
+    def test_rejects_without_wiki_vault(self, client):
+        app_config.wiki_vault_path = None
+        response = client.post("/proposals/batch_fake/approve")
+        assert response.status_code == 400
+
+    def test_approve_missing_batch(self, client, tmp_path):
+        """Approving a batch with no staging dir returns 0 articles."""
+        app_config.wiki_vault_path = str(tmp_path / "wiki-vault")
+        (tmp_path / "wiki-vault" / "concepts").mkdir(parents=True)
+
+        repo.create_proposal("batch_test", str(tmp_path), "Test batch")
+        response = client.post("/proposals/batch_test/approve")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["articles_written"] == 0
+
+
+class TestProposalRejectEndpoint:
+    def test_reject_proposal(self, client):
+        repo.create_proposal("batch_rej", "/path", "Reject me")
+        response = client.post("/proposals/batch_rej/reject", json={"reason": "not relevant"})
+        assert response.status_code == 200
+        assert response.json()["status"] == "rejected"

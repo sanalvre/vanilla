@@ -28,6 +28,7 @@ Run with: `cd sidecar && python -m pytest ../tests/python/ -v`
 | `test_job_queue.py` | Job lifecycle, status updates, active filtering, cleanup, unique IDs |
 | `test_gpu_detect.py` | CUDA/MPS detection mocks, caching, torch-not-installed fallback |
 | `test_setup_crew.py` | Setup crew JSON response parsing, code fence handling, validation |
+| `test_pipeline.py` | Pipeline JSON parsing, slugify, token estimation, fileback frontmatter/wikilink extraction, index updates |
 
 ## Python Integration Tests (`tests/python/integration/`)
 
