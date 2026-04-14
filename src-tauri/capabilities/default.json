@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicedoc/doc-schemas/master/tauri-capability.json",
+  "identifier": "default",
+  "description": "Default capability set for Vanilla",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:allow-spawn",
+    "shell:allow-stdin-write",
+    "shell:allow-kill",
+    "fs:allow-read",
+    "fs:allow-write",
+    "fs:allow-exists",
+    "fs:allow-mkdir",
+    "fs:allow-watch",
+    "dialog:allow-open",
+    "dialog:allow-save"
+  ]
+}

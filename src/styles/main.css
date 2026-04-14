@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+:root {
+  --vanilla-bg: #fafaf9;
+  --vanilla-fg: #1c1917;
+  --vanilla-border: #e7e5e4;
+  --vanilla-accent: #78716c;
+  --vanilla-highlight: #f59e0b;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--vanilla-bg);
+  color: var(--vanilla-fg);
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Oxygen,
+    sans-serif;
+}
+
+/* Prevent text selection during drag */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
