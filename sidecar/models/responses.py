@@ -65,8 +65,23 @@ class LLMValidateRequest(BaseModel):
     provider: str  # "openai" | "anthropic" | "openrouter" | "ollama"
     api_key: Optional[str] = None
     base_url: Optional[str] = None  # for Ollama
+    model: Optional[str] = None
 
 
 class LLMValidateResponse(BaseModel):
     valid: bool
     error: Optional[str] = None
+
+
+class OnboardingGenerateRequest(BaseModel):
+    description: str
+    provider: str
+    model: str
+    api_key: str
+    base_url: Optional[str] = None
+
+
+class OnboardingGenerateResponse(BaseModel):
+    ontology_md: str
+    agents_md: str
+    suggested_categories: list[str]

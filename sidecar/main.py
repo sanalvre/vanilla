@@ -33,12 +33,17 @@ from models.responses import (
     FileEventRequest,
     IngestUrlRequest,
     LastRun,
+    LLMValidateRequest,
+    LLMValidateResponse,
+    OnboardingGenerateRequest,
+    OnboardingGenerateResponse,
 )
 from services.vault_manager import create_vault_structure, validate_vault_structure
 from services.graph_service import load_graph, get_articles_citing
 from services.watcher_bridge import WatcherBridge, FileEvent
 from services.paths import normalize_path
 from services.gpu_detect import detect_gpu
+from services.llm_service import validate_connection as llm_validate_connection
 from services.ingestion.job_queue import ingest_queue, JobStatus
 from services.ingestion.normalizer import (
     ingest_markdown, ingest_pdf, ingest_url, detect_source_type,
@@ -406,6 +411,49 @@ async def search(q: str, vault: str = "all", limit: int = 20):
 
     results = repo.search_fts(q, vault=vault if vault != "all" else None, limit=limit)
     return {"results": results}
+
+
+# ─── LLM Endpoints ─────────────────────────────────────────────────
+
+@app.post("/llm/validate", response_model=LLMValidateResponse)
+async def llm_validate(request: LLMValidateRequest):
+    """Validate an LLM API key/connection."""
+    valid, error = await llm_validate_connection(
+        provider=request.provider,
+        api_key=request.api_key,
+        base_url=request.base_url,
+        model=request.model,
+    )
+
+    if valid:
+        # Save validated LLM config
+        config.llm.provider = request.provider
+        config.llm.api_key = request.api_key or ""
+        config.llm.base_url = request.base_url
+        config.save()
+
+    return LLMValidateResponse(valid=valid, error=error)
+
+
+# ─── Onboarding Endpoints ──────────────────────────────────────────
+
+@app.post("/onboarding/generate-ontology", response_model=OnboardingGenerateResponse)
+async def generate_ontology_endpoint(request: OnboardingGenerateRequest):
+    """Generate ontology and AGENTS.md from user description."""
+    from agents.setup_crew import generate_ontology
+
+    try:
+        result = await generate_ontology(
+            description=request.description,
+            provider=request.provider,
+            model=request.model,
+            api_key=request.api_key,
+            base_url=request.base_url,
+        )
+        return OnboardingGenerateResponse(**result)
+    except Exception as e:
+        logger.error("Ontology generation failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ─── Entry Point ────────────────────────────────────────────────────

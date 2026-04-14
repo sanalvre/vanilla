@@ -6,6 +6,7 @@ import { checkHealth } from "./api/sidecar";
 import { DropZone } from "./components/layout/DropZone";
 import { UrlBar } from "./components/layout/UrlBar";
 import { IngestStatus } from "./components/layout/IngestStatus";
+import { OnboardingFlow } from "./components/onboarding/OnboardingFlow";
 
 function App() {
   const {
@@ -17,6 +18,7 @@ function App() {
     vaultWarnings,
     checkInitialization,
     setSidecarConnected,
+    setVaultPaths,
   } = useVaultStore();
 
   const { agentStatus, pendingProposals, startPolling, stopPolling } =
@@ -143,17 +145,11 @@ function App() {
         {/* Main content */}
         <main className="flex flex-1 overflow-hidden">
           {!initialized ? (
-            <div className="flex flex-1 items-center justify-center">
-              <div className="max-w-md text-center">
-                <h2 className="mb-2 text-xl font-semibold">
-                  Welcome to Vanilla
-                </h2>
-                <p className="text-stone-500">
-                  Onboarding flow will go here (Phase 4). Set up your API key
-                  and describe your vault to get started.
-                </p>
-              </div>
-            </div>
+            <OnboardingFlow
+              onComplete={(cleanPath, wikiPath) => {
+                setVaultPaths(cleanPath, wikiPath);
+              }}
+            />
           ) : (
             <div className="flex flex-1">
               {/* Left pane — file tree placeholder */}

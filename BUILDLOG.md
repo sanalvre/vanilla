@@ -4,6 +4,37 @@ Reverse-chronological log of all development activity. This is the primary conte
 
 ---
 
+## 2026-04-14 — [Phase 4.0] Onboarding Flow
+
+**What changed:**
+- `sidecar/services/llm_service.py` — provider-agnostic LLM service: `validate_connection()` tests reachability (Ollama via /api/tags, cloud providers via tiny chat completion), `chat_completion()` for actual LLM calls. Uses litellm when installed, falls back to raw httpx against OpenAI-compatible endpoints. Supports OpenAI, Anthropic, OpenRouter, Ollama with correct URL/header routing.
+- `sidecar/agents/setup_crew.py` — generates ontology.md + AGENTS.md from user's vault description via a structured system prompt. Robust JSON parsing handles code fences, surrounding text, and missing fields. Ready to upgrade to full CrewAI crew later.
+- `sidecar/main.py` — 2 new endpoints: `POST /llm/validate` (tests connection + saves config on success), `POST /onboarding/generate-ontology` (calls setup crew, returns ontology/agents/categories)
+- `sidecar/models/responses.py` — added `model` field to LLMValidateRequest, new OnboardingGenerateRequest/Response models
+- `src/api/onboarding.ts` — typed API client: `validateLLM()`, `generateOntology()`
+- `src/components/onboarding/OnboardingFlow.tsx` — 5-step wizard with step indicator dots, shared state flow between steps
+- `src/components/onboarding/ApiKeyStep.tsx` — provider dropdown, API key input, model selector with per-provider defaults, Ollama base_url, test connection with feedback
+- `src/components/onboarding/DescriptionStep.tsx` — free-text area with 20-char minimum and character counter
+- `src/components/onboarding/GeneratingStep.tsx` — auto-calls LLM on mount, spinner, error/retry handling
+- `src/components/onboarding/ReviewStep.tsx` — editable ontology textarea, removable/editable category chips
+- `src/components/onboarding/FolderSelectStep.tsx` — Tauri native folder dialog, vault creation with ontology/agents content
+- `src/App.tsx` — replaced placeholder onboarding div with `<OnboardingFlow>` component
+
+**Decisions:**
+- Setup crew uses direct LLM call (not CrewAI) for simplicity — single prompt returns structured JSON. Can upgrade to multi-agent crew later if needed.
+- LLM service has litellm as optional dependency — httpx fallback ensures the app works without it installed
+- Anthropic httpx fallback routes through OpenAI-compatible endpoint (litellm handles native Anthropic API when available)
+- Config saved on successful LLM validation so it persists across restarts
+
+**Tests:** 11 new tests:
+- `tests/python/test_setup_crew.py` — 8 tests: JSON parsing (clean, code-fenced, surrounding text), missing field validation, error cases
+- `tests/python/integration/test_api.py` — 3 new: LLM validate endpoint contract (missing key, response shape), onboarding endpoint validation
+- All 168 Python + 14 TypeScript tests passing
+
+**Next:** Phase 5 — Main agent pipeline (CrewAI flows, 4-agent chain, proposal generation)
+
+---
+
 ## 2026-04-13 — [Phase 3.0] Ingestion Pipeline
 
 **What changed:**

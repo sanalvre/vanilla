@@ -27,6 +27,7 @@ Run with: `cd sidecar && python -m pytest ../tests/python/ -v`
 | `test_normalizer.py` | Source type detection, slugify, title extraction, MD/PDF/URL ingestion routing |
 | `test_job_queue.py` | Job lifecycle, status updates, active filtering, cleanup, unique IDs |
 | `test_gpu_detect.py` | CUDA/MPS detection mocks, caching, torch-not-installed fallback |
+| `test_setup_crew.py` | Setup crew JSON response parsing, code fence handling, validation |
 
 ## Python Integration Tests (`tests/python/integration/`)
 

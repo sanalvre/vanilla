@@ -331,3 +331,38 @@ class TestIngestActiveEndpoint:
         response = client.get("/ingest/active")
         assert response.status_code == 200
         assert "jobs" in response.json()
+
+
+# ─── LLM Validation Endpoint ──────────────────────────────────────
+
+class TestLLMValidateEndpoint:
+    def test_rejects_missing_key_for_cloud(self, client):
+        """Cloud providers need an API key."""
+        response = client.post("/llm/validate", json={
+            "provider": "openai",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert data["valid"] is False
+        assert data["error"]
+
+    def test_returns_valid_shape(self, client):
+        """Response always has valid + error fields."""
+        response = client.post("/llm/validate", json={
+            "provider": "openai",
+            "api_key": "sk-fake",
+            "model": "gpt-4o-mini",
+        })
+        assert response.status_code == 200
+        data = response.json()
+        assert "valid" in data
+        assert "error" in data
+
+
+# ─── Onboarding Generate Endpoint ─────────────────────────────────
+
+class TestOnboardingGenerateEndpoint:
+    def test_rejects_without_required_fields(self, client):
+        """Should 422 if required fields missing."""
+        response = client.post("/onboarding/generate-ontology", json={})
+        assert response.status_code == 422
