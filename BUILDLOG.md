@@ -4,6 +4,58 @@ Reverse-chronological log of all development activity. This is the primary conte
 
 ---
 
+## 2026-04-13 — [Phase 2.0] Vault infrastructure, file watching, graph service
+
+**What changed:**
+
+Backend (Python sidecar):
+- `services/graph_service.py` — graph.json CRUD: add/remove nodes, add edges, source_map management, stale article lookup via `get_articles_citing()`. Dual-purpose: Reagraph visualization + stale tracking.
+- `services/watcher_bridge.py` — Full debounce system: per-path 300s debounce, SHA-256 content hash verification at debounce end, timer reset on re-write, sync-write skip via `is_recent_sync_write()`, force-dispatch for "Run agent now" command.
+- `main.py` expanded with 11 endpoints total: `/health`, `/status` (now live from DB), `/vault/structure` (with warnings), `/vault/create`, `/internal/file-event`, `/agent/run-now`, `/wiki/graph`, `/wiki/stale`, `/proposals`, `/runs` (paginated), `/search`
+- `on_file_ready()` callback wired: when a debounced file passes, flags stale articles via graph.json source_map
+
+Frontend (React + TypeScript):
+- `src/api/sidecar.ts` — Full typed API client matching all 11 sidecar endpoints
+- `src/api/fileWatcher.ts` — Bridges Tauri fs watch plugin to sidecar's `/internal/file-event` endpoint. Watches clean-vault (recursive) and wiki-vault/staging.
+- `src/stores/statusStore.ts` — Polls `/status` every 5s; surfaces agent status + pending proposal count
+- `src/stores/vaultStore.ts` — Updated with sidecarConnected state, vault warnings display
+- `src/App.tsx` — Wires file watcher lifecycle, status polling, vault warnings banner
+
+Rust (Tauri):
+- `src/lib.rs` — Added `start_watching` and `get_app_data_dir` commands (file watching happens on TS side via `@tauri-apps/plugin-fs`)
+
+**Decisions:**
+- File watching lives in TypeScript (using `@tauri-apps/plugin-fs` `watch()`) not Rust — simpler, and the TS layer needs to forward events to the sidecar anyway
+- Debounce is per-path with content hash verification — prevents false triggers when user saves a file multiple times quickly, and prevents re-triggering after no-op saves
+- `on_file_ready` callback does stale article flagging immediately (Phase 5 will add agent pipeline dispatch)
+- Status polling at 5s interval — good balance between responsiveness and overhead
+
+**Tests:**
+- `test_graph_service.py` — 24 tests: load/save, node CRUD, edge CRUD, source_map, stale lookup, path normalization (all pass)
+- `test_watcher_bridge.py` — 7 async tests: debounce dispatch, timer reset, independent paths, force dispatch, delete events, pending count/paths (all pass)
+- `test_api.py` — expanded to 21 integration tests: all 11 endpoints tested including vault creation, file events, search, graph, stale, proposals, runs (all pass)
+- **Total: 95 Python + 14 TypeScript = 109 tests, all passing**
+- Cargo check passes (0 errors, 0 warnings after fix)
+
+**Next:** Phase 2 complete. Commit and begin Phase 3 (ingestion pipeline) or Phase 4 (onboarding).
+
+---
+
+## Phase 2 Summary — COMPLETE
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| graph_service.py | Done | Nodes, edges, source_map, stale article lookup, save/load with corruption recovery |
+| watcher_bridge.py | Done | Per-path debounce (300s), SHA-256 hash verification, sync-write skip, force dispatch |
+| FastAPI endpoints (11 total) | Done | All Phase 1+2 endpoints live, tested via TestClient |
+| Frontend API client | Done | Typed wrappers for all endpoints in sidecar.ts |
+| File watcher bridge | Done | Tauri fs watch -> TypeScript -> sidecar /internal/file-event |
+| Status polling store | Done | 5s interval, agent status + pending proposals |
+| Rust Tauri commands | Done | start_watching, get_app_data_dir |
+| Tests | Done | 109 total (95 Python, 14 TypeScript) — all passing |
+
+---
+
 ## 2026-04-13 — [Phase 1.0] Project initialization
 
 **What changed:** Created git repo, BUILDLOG.md, docs/wiki/ development wiki, .gitignore

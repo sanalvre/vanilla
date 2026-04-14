@@ -1,26 +1,63 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useVaultStore } from "./stores/vaultStore";
+import { useStatusStore } from "./stores/statusStore";
+import { startVaultWatcher, stopVaultWatcher } from "./api/fileWatcher";
+import { checkHealth } from "./api/sidecar";
 
 function App() {
-  const { initialized, loading, checkInitialization } = useVaultStore();
-  const [sidecarStatus, setSidecarStatus] = useState<string>("checking...");
+  const {
+    initialized,
+    loading,
+    sidecarConnected,
+    cleanVaultPath,
+    wikiVaultPath,
+    vaultWarnings,
+    checkInitialization,
+    setSidecarConnected,
+  } = useVaultStore();
 
+  const { agentStatus, pendingProposals, startPolling, stopPolling } =
+    useStatusStore();
+
+  // Check sidecar health and vault state on mount
   useEffect(() => {
-    // Check sidecar health on mount
-    const checkHealth = async () => {
+    const init = async () => {
       try {
-        const port = useVaultStore.getState().sidecarPort;
-        const res = await fetch(`http://127.0.0.1:${port}/health`);
-        const data = await res.json();
-        setSidecarStatus(data.status === "ok" ? "connected" : "error");
+        const health = await checkHealth();
+        setSidecarConnected(health.status === "ok");
       } catch {
-        setSidecarStatus("disconnected");
+        setSidecarConnected(false);
       }
+      await checkInitialization();
     };
 
-    checkHealth();
-    checkInitialization();
-  }, [checkInitialization]);
+    init();
+  }, [checkInitialization, setSidecarConnected]);
+
+  // Start status polling when initialized and connected
+  useEffect(() => {
+    if (initialized && sidecarConnected) {
+      startPolling();
+      return () => stopPolling();
+    }
+  }, [initialized, sidecarConnected, startPolling, stopPolling]);
+
+  // Start file watcher when vault paths are known
+  useEffect(() => {
+    if (cleanVaultPath && wikiVaultPath) {
+      // Vault root is the parent of clean-vault
+      const vaultRoot = cleanVaultPath.replace(/\/clean-vault$/, "");
+      startVaultWatcher(cleanVaultPath, wikiVaultPath, vaultRoot).catch(
+        (err) => {
+          console.warn("File watcher not available (dev mode?):", err);
+        },
+      );
+
+      return () => {
+        stopVaultWatcher();
+      };
+    }
+  }, [cleanVaultPath, wikiVaultPath]);
 
   if (loading) {
     return (
@@ -40,26 +77,34 @@ function App() {
             Sidecar:{" "}
             <span
               className={
-                sidecarStatus === "connected"
-                  ? "text-green-600"
-                  : "text-red-500"
+                sidecarConnected ? "text-green-600" : "text-red-500"
               }
             >
-              {sidecarStatus}
+              {sidecarConnected ? "connected" : "disconnected"}
             </span>
           </span>
         </div>
       </header>
+
+      {/* Vault warnings */}
+      {vaultWarnings.length > 0 && (
+        <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+          <strong>Vault warnings:</strong>{" "}
+          {vaultWarnings.join("; ")}
+        </div>
+      )}
 
       {/* Main content */}
       <main className="flex flex-1 overflow-hidden">
         {!initialized ? (
           <div className="flex flex-1 items-center justify-center">
             <div className="max-w-md text-center">
-              <h2 className="mb-2 text-xl font-semibold">Welcome to Vanilla</h2>
+              <h2 className="mb-2 text-xl font-semibold">
+                Welcome to Vanilla
+              </h2>
               <p className="text-stone-500">
-                Onboarding flow will go here. Set up your API key and describe
-                your vault to get started.
+                Onboarding flow will go here (Phase 4). Set up your API key
+                and describe your vault to get started.
               </p>
             </div>
           </div>
@@ -67,7 +112,17 @@ function App() {
           <div className="flex flex-1">
             {/* Left pane — file tree placeholder */}
             <aside className="w-64 border-r border-stone-200 p-4">
-              <p className="text-sm text-stone-400">File tree (Phase 7)</p>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-stone-400">
+                Clean Vault
+              </p>
+              <p className="text-sm text-stone-400">
+                File tree (Phase 7)
+              </p>
+              {cleanVaultPath && (
+                <p className="mt-2 truncate text-xs text-stone-300">
+                  {cleanVaultPath}
+                </p>
+              )}
             </aside>
 
             {/* Right pane — content viewer placeholder */}
@@ -82,8 +137,30 @@ function App() {
 
       {/* Bottom bar */}
       <footer className="flex items-center justify-between border-t border-stone-200 px-4 py-1.5 text-xs text-stone-400">
-        <span>Agent: idle</span>
-        <span>0 proposals pending</span>
+        <span>
+          Agent:{" "}
+          <span
+            className={
+              agentStatus === "running"
+                ? "text-blue-500"
+                : agentStatus === "error"
+                  ? "text-red-500"
+                  : ""
+            }
+          >
+            {agentStatus}
+          </span>
+        </span>
+        <span>
+          {pendingProposals > 0 ? (
+            <span className="text-amber-600 font-medium">
+              {pendingProposals} proposal{pendingProposals !== 1 ? "s" : ""}{" "}
+              pending
+            </span>
+          ) : (
+            "Up to date"
+          )}
+        </span>
       </footer>
     </div>
   );

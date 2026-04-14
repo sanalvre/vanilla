@@ -11,17 +11,34 @@ so Tauri can read it and configure the frontend's base URL.
 All file paths are normalized to forward slashes via services.paths.
 """
 
+import asyncio
+import logging
 import sys
 import socket
 from contextlib import asynccontextmanager
+from typing import Optional
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import VanillaConfig
 from db.database import init_db, get_db_path
-from models.responses import HealthResponse, StatusResponse
+from db import repository as repo
+from models.responses import (
+    HealthResponse,
+    StatusResponse,
+    VaultCreateRequest,
+    VaultCreateResponse,
+    FileEventRequest,
+    LastRun,
+)
+from services.vault_manager import create_vault_structure, validate_vault_structure
+from services.graph_service import load_graph, get_articles_citing
+from services.watcher_bridge import WatcherBridge, FileEvent
+from services.paths import normalize_path
+
+logger = logging.getLogger("vanilla")
 
 
 def find_free_port() -> int:
@@ -34,14 +51,55 @@ def find_free_port() -> int:
 # Global config — loaded once at startup, updated via endpoints
 config = VanillaConfig.load()
 
+# Watcher bridge — initialized in lifespan
+watcher_bridge: Optional[WatcherBridge] = None
+
+
+async def on_file_ready(event: FileEvent) -> None:
+    """
+    Callback fired when a file passes the debounce check.
+    This is where the agent pipeline will be triggered (Phase 5).
+    For now, we log it and flag stale articles.
+    """
+    logger.info("File ready for processing: %s (%s)", event.path, event.event_type)
+
+    # Stale article detection: if a clean-vault file changed,
+    # find all wiki articles that cite it and flag them
+    if event.path.startswith("clean-vault/") and config.wiki_vault_path:
+        graph = load_graph(config.wiki_vault_path)
+        stale_articles = get_articles_citing(graph, event.path)
+        for article_path in stale_articles:
+            repo.flag_stale_article(article_path, event.path)
+            logger.info("Flagged stale article: %s (source changed: %s)", article_path, event.path)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle."""
+    global watcher_bridge
+
     # Initialize SQLite database with WAL mode
     init_db(get_db_path(config))
+
+    # Initialize watcher bridge with debounce
+    vault_root = ""
+    if config.clean_vault_path:
+        # Vault root is the parent of clean-vault
+        from pathlib import Path
+        vault_root = str(Path(config.clean_vault_path).parent)
+
+    watcher_bridge = WatcherBridge(
+        debounce_seconds=300,
+        on_ready=on_file_ready,
+        vault_root=vault_root,
+    )
+    await watcher_bridge.start()
+
     yield
-    # Shutdown: nothing to clean up (SQLite closes automatically)
+
+    # Shutdown
+    if watcher_bridge:
+        await watcher_bridge.stop()
 
 
 app = FastAPI(
@@ -53,7 +111,7 @@ app = FastAPI(
 # Allow requests from Tauri webview (localhost with any port)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Tauri webview uses tauri:// or https://localhost
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -71,22 +129,162 @@ async def health():
 @app.get("/status", response_model=StatusResponse)
 async def status():
     """Agent pipeline status and pending proposal count."""
+    pending = repo.count_pending_proposals()
+    last = repo.get_last_run()
+
+    last_run = None
+    if last:
+        last_run = LastRun(
+            id=last["run_id"],
+            completed_at=last.get("completed_at", 0) or 0,
+            tokens_used=last.get("tokens_used", 0) or 0,
+        )
+
     return StatusResponse(
-        agent_status="idle",
+        agent_status="idle",  # Will be dynamic in Phase 5
         current_phase=None,
-        last_run=None,
-        pending_proposals=0,
+        last_run=last_run,
+        pending_proposals=pending,
     )
 
+
+# ─── Vault Endpoints ────────────────────────────────────────────────
 
 @app.get("/vault/structure")
 async def vault_structure():
     """Return current vault paths and initialization state."""
+    warnings = []
+    if config.initialized and config.clean_vault_path:
+        from pathlib import Path
+        base = str(Path(config.clean_vault_path).parent)
+        warnings = validate_vault_structure(base)
+
     return {
         "initialized": config.initialized,
         "clean_vault_path": config.clean_vault_path,
         "wiki_vault_path": config.wiki_vault_path,
+        "warnings": warnings,
     }
+
+
+@app.post("/vault/create", response_model=VaultCreateResponse)
+async def vault_create(request: VaultCreateRequest):
+    """Create the two-vault directory structure."""
+    global watcher_bridge
+
+    try:
+        result = create_vault_structure(
+            base_path=request.base_path,
+            ontology_content=request.ontology_content,
+            agents_content=request.agents_content,
+        )
+
+        # Update config
+        config.clean_vault_path = result["clean_vault_path"]
+        config.wiki_vault_path = result["wiki_vault_path"]
+        config.initialized = True
+        config.save()
+
+        # Restart watcher bridge with the new vault root
+        if watcher_bridge:
+            await watcher_bridge.stop()
+        watcher_bridge = WatcherBridge(
+            debounce_seconds=300,
+            on_ready=on_file_ready,
+            vault_root=request.base_path,
+        )
+        await watcher_bridge.start()
+
+        return VaultCreateResponse(
+            success=True,
+            clean_vault_path=result["clean_vault_path"],
+            wiki_vault_path=result["wiki_vault_path"],
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── File Event Endpoints ───────────────────────────────────────────
+
+@app.post("/internal/file-event")
+async def file_event(request: FileEventRequest):
+    """
+    Receive file system events from Tauri's watcher via the frontend.
+    Events are queued and debounced before triggering the agent pipeline.
+    """
+    if not watcher_bridge:
+        raise HTTPException(status_code=503, detail="Watcher bridge not initialized")
+
+    event = FileEvent(
+        path=request.path,
+        event_type=request.event_type,
+        timestamp=request.timestamp,
+    )
+    queued = await watcher_bridge.push_event(event)
+
+    return {"queued": queued, "pending_count": watcher_bridge.get_pending_count()}
+
+
+@app.post("/agent/run-now")
+async def agent_run_now():
+    """
+    Force-trigger the agent pipeline, bypassing debounce.
+    Processes all files currently in the debounce queue.
+    """
+    if not watcher_bridge:
+        raise HTTPException(status_code=503, detail="Watcher bridge not initialized")
+
+    count = await watcher_bridge.force_dispatch_all()
+    return {"dispatched": count}
+
+
+# ─── Graph Endpoints ────────────────────────────────────────────────
+
+@app.get("/wiki/graph")
+async def wiki_graph():
+    """Return the current knowledge graph for Reagraph visualization."""
+    if not config.wiki_vault_path:
+        return {"nodes": [], "edges": [], "source_map": {}}
+
+    graph = load_graph(config.wiki_vault_path)
+    return graph
+
+
+@app.get("/wiki/stale")
+async def wiki_stale():
+    """Return all articles currently flagged as stale."""
+    stale = repo.get_stale_articles()
+    return {"stale_articles": stale}
+
+
+# ─── Proposal Endpoints (read-only for now, write in Phase 5) ──────
+
+@app.get("/proposals")
+async def list_proposals():
+    """List all pending proposal batches."""
+    batches = repo.get_pending_proposals()
+    return {"batches": batches}
+
+
+# ─── Run History ────────────────────────────────────────────────────
+
+@app.get("/runs")
+async def list_runs(limit: int = 20, offset: int = 0):
+    """Paginated agent run history."""
+    runs = repo.get_runs(limit=limit, offset=offset)
+    return {"runs": runs}
+
+
+# ─── Search Endpoint ────────────────────────────────────────────────
+
+@app.get("/search")
+async def search(q: str, vault: str = "all", limit: int = 20):
+    """Full-text search across indexed vault documents."""
+    if not q.strip():
+        return {"results": []}
+
+    results = repo.search_fts(q, vault=vault if vault != "all" else None, limit=limit)
+    return {"results": results}
 
 
 # ─── Entry Point ────────────────────────────────────────────────────

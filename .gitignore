@@ -56,6 +56,6 @@ htmlcov/
 .pytest_cache/
 
 # Marker/MinerU model weights (downloaded at runtime)
-models/
+ml-models/
 *.onnx
 *.bin
