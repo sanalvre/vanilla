@@ -29,9 +29,8 @@ export function UrlBar({ onIngestStarted, onError }: UrlBarProps) {
     async (e: React.FormEvent) => {
       e.preventDefault();
       const trimmed = url.trim();
-      if (!trimmed) return;
+      if (!trimmed || loading) return;
 
-      // Basic URL validation
       try {
         new URL(trimmed);
       } catch {
@@ -52,46 +51,67 @@ export function UrlBar({ onIngestStarted, onError }: UrlBarProps) {
         setLoading(false);
       }
     },
-    [url, onIngestStarted, onError],
+    [url, loading, onIngestStarted, onError],
   );
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setIsOpen(false);
-        setUrl("");
-      }
-    },
-    [],
-  );
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === "Escape") {
+      setIsOpen(false);
+      setUrl("");
+    }
+  }, []);
 
   if (!isOpen) {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="rounded px-2 py-1 text-sm text-stone-500 hover:bg-stone-100 hover:text-stone-700"
-        title="Paste a URL to ingest (requires internet)"
+        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-stone-500
+                   hover:bg-stone-100 hover:text-stone-700 transition-colors"
+        title="Paste a URL to ingest"
       >
-        + URL
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
+          <circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.2" />
+          <line x1="6" y1="3" x2="6" y2="9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          <line x1="3" y1="6" x2="9" y2="6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+        URL
       </button>
     );
   }
 
   return (
-    <form onSubmit={handleSubmit} className="flex items-center gap-2">
-      <input
-        ref={inputRef}
-        type="text"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder="Paste URL and press Enter..."
-        className="w-64 rounded border border-stone-300 px-2 py-1 text-sm focus:border-amber-400 focus:outline-none"
-        disabled={loading}
-      />
-      {loading && (
-        <span className="text-xs text-stone-400">Fetching...</span>
-      )}
+    <form onSubmit={handleSubmit} className="flex items-center gap-1.5">
+      <div className="relative">
+        <input
+          ref={inputRef}
+          type="text"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Paste URL and press Enter..."
+          className="w-64 rounded border border-stone-200 bg-white px-2.5 py-1 text-xs
+                     text-stone-800 placeholder:text-stone-400 transition-colors
+                     focus:border-stone-400 focus:outline-none disabled:opacity-60"
+          disabled={loading}
+        />
+        {/* Inline spinner */}
+        {loading && (
+          <div className="absolute right-2 top-1/2 -translate-y-1/2">
+            <div className="h-3 w-3 animate-spin rounded-full border border-stone-300 border-t-stone-600" />
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        onClick={() => { setIsOpen(false); setUrl(""); }}
+        className="text-stone-400 hover:text-stone-600 transition-colors"
+        aria-label="Cancel"
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+          <line x1="2" y1="2" x2="10" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          <line x1="10" y1="2" x2="2" y2="10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+      </button>
     </form>
   );
 }

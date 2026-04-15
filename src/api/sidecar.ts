@@ -236,6 +236,36 @@ export async function saveFileContent(
   return res.json();
 }
 
+// ─── LLM Config ────────────────────────────────────────────────────
+
+export interface LLMConfig {
+  provider: string;
+  api_key_set: boolean;
+  api_key_masked: string;
+  base_url: string | null;
+  models: Record<string, string>;
+  max_tokens_per_run: number;
+}
+
+export async function getLLMConfig(): Promise<LLMConfig> {
+  const res = await fetch(`${baseUrl()}/llm/config`);
+  return res.json();
+}
+
+export async function validateLLM(payload: {
+  provider: string;
+  api_key: string;
+  base_url?: string;
+  model?: string;
+}): Promise<{ valid: boolean; error: string | null }> {
+  const res = await fetch(`${baseUrl()}/llm/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
 // ─── Runs ──────────────────────────────────────────────────────────
 
 export async function getRuns(

@@ -76,6 +76,7 @@ export const SearchPanel = memo(function SearchPanel({
   const [filter, setFilter] = useState<VaultFilter>("all");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
+  const [hasError, setHasError] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const openFile = useEditorStore((s) => s.openFile);
@@ -93,11 +94,13 @@ export const SearchPanel = memo(function SearchPanel({
 
       debounceRef.current = setTimeout(async () => {
         setLoading(true);
+        setHasError(false);
         try {
           const data = await search(q, filter, 25);
           setResults(data.results);
         } catch {
           setResults([]);
+          setHasError(true);
         } finally {
           setLoading(false);
         }
@@ -120,9 +123,10 @@ export const SearchPanel = memo(function SearchPanel({
       // Re-run search with new filter
       if (query.trim()) {
         setLoading(true);
+        setHasError(false);
         search(query, f, 25)
           .then((d) => setResults(d.results))
-          .catch(() => setResults([]))
+          .catch(() => { setResults([]); setHasError(true); })
           .finally(() => setLoading(false));
       }
     },
@@ -164,7 +168,7 @@ export const SearchPanel = memo(function SearchPanel({
             className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors ${
               filter === f.value
                 ? "bg-stone-800 text-white"
-                : "text-stone-500 hover:bg-stone-100 hover:text-stone-700"
+                : "text-stone-600 hover:bg-stone-100 hover:text-stone-800"
             }`}
           >
             {f.label}
@@ -172,9 +176,14 @@ export const SearchPanel = memo(function SearchPanel({
         ))}
         <button
           onClick={onClose}
-          className="ml-auto text-[11px] text-stone-400 hover:text-stone-600"
+          aria-label="Close search"
+          className="ml-auto flex h-5 w-5 items-center justify-center rounded text-stone-400
+                     transition-colors hover:bg-stone-200 hover:text-stone-700"
         >
-          ✕
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+            <line x1="1.5" y1="1.5" x2="8.5" y2="8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            <line x1="8.5" y1="1.5" x2="1.5" y2="8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
         </button>
       </div>
 
@@ -186,7 +195,12 @@ export const SearchPanel = memo(function SearchPanel({
           </p>
         )}
 
-        {query.trim() && !loading && results.length === 0 && (
+        {query.trim() && !loading && hasError && (
+          <p className="px-2 py-3 text-[11px] text-red-400">
+            Search unavailable — is the sidecar running?
+          </p>
+        )}
+        {query.trim() && !loading && !hasError && results.length === 0 && (
           <p className="px-2 py-3 text-[11px] text-stone-400">
             No results for "{query}"
           </p>

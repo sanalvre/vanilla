@@ -1,8 +1,5 @@
 /**
  * EditorPanel — CodeMirror 6 markdown editor with React.memo isolation.
- *
- * Wraps useCodemirror hook; shows file path breadcrumb and
- * dirty/read-only indicators. Completely isolated from graph re-renders.
  */
 
 import { memo, useCallback } from "react";
@@ -19,9 +16,7 @@ export const EditorPanel = memo(function EditorPanel() {
   const saveFile = useEditorStore((s) => s.saveFile);
 
   const handleChange = useCallback(
-    (value: string) => {
-      updateContent(value);
-    },
+    (value: string) => updateContent(value),
     [updateContent],
   );
 
@@ -31,7 +26,6 @@ export const EditorPanel = memo(function EditorPanel() {
     onChange: handleChange,
   });
 
-  // Ctrl/Cmd+S save handler
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
@@ -44,8 +38,14 @@ export const EditorPanel = memo(function EditorPanel() {
 
   if (!activeFilePath) {
     return (
-      <div className="flex flex-1 items-center justify-center text-sm text-stone-400">
-        Select a file to edit
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-stone-400">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" className="opacity-30">
+          <rect x="6" y="4" width="20" height="24" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none" />
+          <line x1="10" y1="11" x2="22" y2="11" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          <line x1="10" y1="15" x2="22" y2="15" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          <line x1="10" y1="19" x2="18" y2="19" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+        <p className="text-sm">Select a file to edit</p>
       </div>
     );
   }
@@ -53,32 +53,49 @@ export const EditorPanel = memo(function EditorPanel() {
   if (isLoading) {
     return (
       <div className="flex flex-1 items-center justify-center text-sm text-stone-400">
-        Loading...
+        <div className="h-4 w-4 animate-spin rounded-full border border-stone-300 border-t-stone-500" />
       </div>
     );
   }
 
-  // Extract display name from path
-  const fileName = activeFilePath.split("/").pop() || activeFilePath;
-  const parentPath = activeFilePath.split("/").slice(0, -1).join("/");
+  // Build breadcrumb parts
+  const parts = activeFilePath.split("/");
+  const fileName = parts.pop() || activeFilePath;
+  const parentPath = parts.join("/");
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden" onKeyDown={handleKeyDown}>
       {/* Breadcrumb bar */}
-      <div className="flex items-center gap-2 border-b border-stone-100 px-3 py-1.5 text-xs">
-        <span className="text-stone-400 truncate max-w-[200px]">{parentPath}/</span>
-        <span className="font-medium text-stone-700">{fileName}</span>
-        {isReadOnly && (
-          <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-medium text-stone-500">
-            READ ONLY
-          </span>
+      <div className="flex items-center gap-1.5 border-b border-stone-100 px-3 py-1.5 text-xs min-w-0">
+        {parentPath && (
+          <>
+            <span
+              className="shrink-0 max-w-[160px] truncate text-stone-400"
+              title={parentPath}
+            >
+              {parentPath}
+            </span>
+            <span className="text-stone-300">/</span>
+          </>
         )}
-        {isDirty && (
-          <span className="h-1.5 w-1.5 rounded-full bg-amber-400" title="Unsaved changes" />
-        )}
+        <span className="font-medium text-stone-700 truncate min-w-0">{fileName}</span>
+
+        <div className="ml-auto flex items-center gap-1.5 shrink-0">
+          {isReadOnly && (
+            <span className="rounded bg-stone-100 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-stone-500">
+              Read only
+            </span>
+          )}
+          {isDirty && !isReadOnly && (
+            <span
+              className="h-1.5 w-1.5 rounded-full bg-amber-400"
+              title="Unsaved changes — Cmd+S to save"
+            />
+          )}
+        </div>
       </div>
 
-      {/* Editor container */}
+      {/* CodeMirror container */}
       <div ref={setContainer} className="flex-1 overflow-hidden" />
     </div>
   );

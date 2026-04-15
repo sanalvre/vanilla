@@ -635,6 +635,21 @@ async def search(q: str, vault: str = "all", limit: int = 20):
 
 # ─── LLM Endpoints ─────────────────────────────────────────────────
 
+@app.get("/llm/config")
+async def llm_get_config():
+    """Return current LLM configuration (API key is masked)."""
+    key = config.llm.api_key
+    masked = (key[:4] + "..." + key[-4:]) if len(key) > 8 else ("*" * len(key) if key else "")
+    return {
+        "provider": config.llm.provider,
+        "api_key_set": bool(key),
+        "api_key_masked": masked,
+        "base_url": config.llm.base_url,
+        "models": config.llm.models,
+        "max_tokens_per_run": config.llm.max_tokens_per_run,
+    }
+
+
 @app.post("/llm/validate", response_model=LLMValidateResponse)
 async def llm_validate(request: LLMValidateRequest):
     """Validate an LLM API key/connection."""

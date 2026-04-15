@@ -4,6 +4,35 @@ Reverse-chronological log of all development activity. This is the primary conte
 
 ---
 
+## 2026-04-14 — [Phase 9.0] LLM Configuration UI + UI Polish
+
+**What changed:**
+
+Backend:
+- `sidecar/main.py` — new `GET /llm/config` endpoint returns current provider, masked API key, model map, token limit
+- `src/api/sidecar.ts` — `getLLMConfig()`, `validateLLM()`, `LLMConfig` interface
+
+Phase 9 UI:
+- `src/components/settings/SettingsPanel.tsx` — slide-in settings panel: provider picker (OpenAI/Anthropic/OpenRouter/Ollama), API key input with show/hide toggle, model selector, Ollama base URL, "Test & Save" button with spinner, success/error feedback, key masked in status banner, escape to close
+- `src/App.tsx` — gear icon button in top-right header opens SettingsPanel; `settingsOpen` state
+
+UI Polish (from audit):
+- `FileTree.tsx` — loading skeleton (5 shimmer rows), `transition-colors` on all buttons, `aria-expanded` on folders, `aria-current="page"` on active file, `focus-visible:ring-1` keyboard nav, better empty state with hint text, slimmer font (text-xs throughout), improved file icon colors
+- `EditorPanel.tsx` — spinner on loading instead of text, document icon on empty state, breadcrumb with tooltip on truncated path, status indicators right-aligned, read-only badge downsized, cleaner min-w-0 flex handling
+- `IngestStatus.tsx` — completed jobs linger 2.5s then expire (no abrupt disappearance), thinner progress bar (h-0.5), green fill on complete, truncated error with full title tooltip, border-top separator, distinct section label sizing
+- `UrlBar.tsx` — inline spinner in input field on loading, cancel X button with SVG icon, disabled state prevents double-submit, transition-colors on all interactive elements
+- `ResizableSplit.tsx` — `role="separator"` + `aria-orientation` + `aria-label` for accessibility, `isDragging` ref prevents stale closure, min/max clamping in drag handler
+- `SearchPanel.tsx` — distinguishes error state from empty results (different messages + red color), improved filter tab contrast (stone-600), SVG close button with proper hover state
+
+Styling:
+- `src/styles/main.css` — `mark` highlight style for FTS snippets (amber bg)
+
+**Tests:** All 194 Python + 14 TypeScript tests passing. Zero TS errors.
+
+**Next:** Phase 10 — Cloud Sync (or skip to Phase 11 packaging)
+
+---
+
 ## 2026-04-14 — [Phase 8.0] Full-Text Search UI
 
 **What changed:**

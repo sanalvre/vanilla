@@ -18,7 +18,8 @@
       "Bash(curl -s http://localhost:1420/)",
       "Bash(C:Python310python.exe -m pip install --upgrade setuptools wheel -q)",
       "Bash(npx tsc:*)",
-      "Bash(curl -s http://localhost:55140/health)"
+      "Bash(curl -s http://localhost:55140/health)",
+      "mcp__Desktop_Commander__read_file"
     ]
   }
 }

@@ -15,6 +15,7 @@ import { ResizableSplit } from "./components/layout/ResizableSplit";
 import { CommandPalette } from "./components/command/CommandPalette";
 import { Logo } from "./components/layout/Logo";
 import { SearchPanel } from "./components/layout/SearchPanel";
+import { SettingsPanel } from "./components/settings/SettingsPanel";
 
 // Lazy load graph (pulls Three.js ~500KB)
 const GraphPanel = lazy(() =>
@@ -79,6 +80,7 @@ function App() {
   // Proposal panel visibility
   const [proposalPanelOpen, setProposalPanelOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Listen for command palette opening proposals
   useEffect(() => {
@@ -195,10 +197,34 @@ function App() {
             >
               {"\u2318"}K
             </button>
+            {/* Settings gear */}
+            <button
+              onClick={() => setSettingsOpen((o) => !o)}
+              className={`rounded p-1 transition-colors ${
+                settingsOpen
+                  ? "bg-stone-200 text-stone-700"
+                  : "text-stone-400 hover:bg-stone-100 hover:text-stone-700"
+              }`}
+              title="Settings"
+              aria-label="Open settings"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="2.5" stroke="currentColor" strokeWidth="1.4" />
+                <path
+                  d="M8 1.5v1M8 13.5v1M1.5 8h1M13.5 8h1M3.4 3.4l.7.7M11.9 11.9l.7.7M11.9 3.4l-.7.7M4.1 11.9l-.7.7"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+
             <span
               className={`h-2 w-2 rounded-full ${
                 sidecarConnected ? "bg-green-500" : "bg-red-400"
               }`}
+              role="status"
+              aria-label={sidecarConnected ? "Sidecar connected" : "Sidecar disconnected"}
               title={sidecarConnected ? "Connected" : "Disconnected"}
             />
           </div>
@@ -330,6 +356,11 @@ function App() {
 
         {/* Command palette overlay */}
         <CommandPalette />
+
+        {/* Settings panel */}
+        {settingsOpen && (
+          <SettingsPanel onClose={() => setSettingsOpen(false)} />
+        )}
       </div>
     </DropZone>
   );
