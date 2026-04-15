@@ -58,6 +58,15 @@ body {
   background: #a8a29e;
 }
 
+/* Search snippet highlight */
+mark {
+  background: #fef3c7;
+  color: #92400e;
+  border-radius: 2px;
+  padding: 0 1px;
+  font-style: normal;
+}
+
 /* cmdk overrides */
 [cmdk-group-heading] {
   padding: 4px 12px;

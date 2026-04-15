@@ -4,6 +4,27 @@ Reverse-chronological log of all development activity. This is the primary conte
 
 ---
 
+## 2026-04-14 — [Phase 8.0] Full-Text Search UI
+
+**What changed:**
+- `src/components/layout/SearchPanel.tsx` — NEW: sidebar-integrated FTS search panel; debounced input (180ms), vault filter tabs (All / Vault / Wiki), ranked result cards with title + snippet, amber wiki badge vs. stone vault badge, auto-focus on open, ✕ to return to file tree
+- `src/components/layout/Logo.tsx` — Redesigned: vanilla flower/plant SVG icon (5-petal orchid with amber centre, stem + leaves + vanilla bean pod) replacing the abstract network icon
+- `src/App.tsx` — Sidebar now has a Search toggle button at the top; file tree swaps to SearchPanel when active; `Ctrl+Shift+F` keyboard shortcut added
+- `src/styles/main.css` — `<mark>` highlight style for FTS snippet matches (amber background)
+
+**Decisions:**
+- Search lives in the sidebar (not a modal/overlay) — keeps the graph + editor fully visible while reading results
+- File tree swaps out for search results rather than stacking — sidebar stays a fixed 224px; no layout shift
+- Snippets rendered via `dangerouslySetInnerHTML` for `<mark>` highlights — safe because the backend generates them from FTS5's `snippet()` function, no user HTML
+- Filter re-fires the search immediately on tab change so results stay fresh
+- Backend `/search` + `repo.search_fts` were already implemented in Phase 5; Phase 8 is purely frontend
+
+**Tests:** All 194 Python + 14 TypeScript tests passing. Zero TS errors. No new tests (search endpoint was already covered by Phase 5 integration tests).
+
+**Next:** Phase 9 — LLM Configuration UI
+
+---
+
 ## 2026-04-14 — [Phase 7.0] Rich UI: Editor, Graph, Command Palette
 
 **What changed:**

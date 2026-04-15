@@ -14,6 +14,7 @@ import { EditorPanel } from "./components/editor/EditorPanel";
 import { ResizableSplit } from "./components/layout/ResizableSplit";
 import { CommandPalette } from "./components/command/CommandPalette";
 import { Logo } from "./components/layout/Logo";
+import { SearchPanel } from "./components/layout/SearchPanel";
 
 // Lazy load graph (pulls Three.js ~500KB)
 const GraphPanel = lazy(() =>
@@ -77,6 +78,7 @@ function App() {
 
   // Proposal panel visibility
   const [proposalPanelOpen, setProposalPanelOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // Listen for command palette opening proposals
   useEffect(() => {
@@ -143,6 +145,11 @@ function App() {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "p") {
         e.preventDefault();
         setProposalPanelOpen((o) => !o);
+      }
+      // Cmd/Ctrl+Shift+F — toggle search
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "f") {
+        e.preventDefault();
+        setSearchOpen((o) => !o);
       }
     };
     document.addEventListener("keydown", handler);
@@ -215,10 +222,36 @@ function App() {
             />
           ) : (
             <div className="flex flex-1">
-              {/* Left sidebar — file tree */}
+              {/* Left sidebar — search + file tree */}
               <aside className="flex w-56 shrink-0 flex-col border-r border-stone-200">
-                <div className="flex-1 overflow-y-auto px-2">
-                  <FileTree />
+                {/* Sidebar header: search toggle */}
+                <div className="flex items-center gap-1 border-b border-stone-100 px-2 py-1.5">
+                  <button
+                    onClick={() => setSearchOpen((o) => !o)}
+                    title="Search (Ctrl+Shift+F)"
+                    className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors ${
+                      searchOpen
+                        ? "bg-stone-200 text-stone-700"
+                        : "text-stone-400 hover:bg-stone-100 hover:text-stone-600"
+                    }`}
+                  >
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
+                      <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5" />
+                      <line x1="10" y1="10" x2="14" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                    Search
+                  </button>
+                </div>
+
+                {/* Body: search results or file tree */}
+                <div className="flex-1 overflow-y-auto">
+                  {searchOpen ? (
+                    <SearchPanel onClose={() => setSearchOpen(false)} />
+                  ) : (
+                    <div className="px-2 py-1">
+                      <FileTree />
+                    </div>
+                  )}
                 </div>
 
                 {/* Ingestion status at bottom of sidebar */}
