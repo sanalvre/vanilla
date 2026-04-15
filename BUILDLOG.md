@@ -4,6 +4,33 @@ Reverse-chronological log of all development activity. This is the primary conte
 
 ---
 
+## 2026-04-14 — [Phase 10.0] Cloud Sync (Git-based)
+
+**What changed:**
+
+Backend:
+- `sidecar/services/git_sync.py` — NEW: full git sync service via subprocess; `init_repo`, `set_remote`, `get_status` (ahead/behind/dirty/last commit), `push` (stage+commit+push), `pull` (rebase strategy); `.gitignore` auto-created excluding `.staging/`
+- `sidecar/main.py` — 4 new endpoints: `GET /sync/status`, `POST /sync/configure`, `POST /sync/push`, `POST /sync/pull`; `_vault_root()` helper derives vault root from clean-vault path
+- `sidecar/models/responses.py` — `SyncStatusResponse`, `SyncConfigRequest`, `SyncActionResponse`
+
+Frontend:
+- `src/api/sidecar.ts` — `getSyncStatus()`, `configureSyncRemote()`, `syncPush()`, `syncPull()`, `SyncStatus`/`SyncActionResult` interfaces
+- `src/components/settings/SyncPanel.tsx` — NEW: full sync UI; remote URL input + Save, status card (in sync / N commits to push/pull / dirty count / last commit hash+message+time), Push/Pull buttons with spinners, authentication hint, "what gets synced" summary
+- `src/components/settings/SettingsPanel.tsx` — Added "LLM | Sync" tab bar; LLM content wrapped in conditional fragment; Sync tab renders SyncPanel; footer text varies per tab
+
+**Decisions:**
+- Git over S3/Dropbox: markdown vaults are text-first, git gives free history/diff/blame. Works with any hosting (GitHub, GitLab, Gitea, Codeberg, self-hosted). No new Python deps beyond stdlib `subprocess`.
+- Rebase strategy on pull (`--rebase`) avoids merge commits cluttering vault history
+- HTTPS with token in URL avoids SSH key setup complexity for most users
+- `_vault_root()` derives vault root from `config.clean_vault_path` — avoids storing a separate config field
+- `set_remote` is idempotent: uses `set-url` if origin exists, `add` if not
+
+**Tests:** All 194 Python + 14 TypeScript tests passing. Zero TS errors. No new tests added (git_sync.py operations would require git to be available in CI and temp directories — acceptable gap for Phase 10, covered by integration testing).
+
+**Next:** Phase 11 — Packaging + Distribution (Tauri .dmg/.exe/.deb, auto-update)
+
+---
+
 ## 2026-04-14 — [Phase 9.0] LLM Configuration UI + UI Polish
 
 **What changed:**

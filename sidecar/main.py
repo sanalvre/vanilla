@@ -44,6 +44,9 @@ from models.responses import (
     ProposalRejectRequest,
     ProposalActionResponse,
     RunPipelineResponse,
+    SyncStatusResponse,
+    SyncConfigRequest,
+    SyncActionResponse,
 )
 from services.vault_manager import create_vault_structure, validate_vault_structure
 from services.graph_service import load_graph, get_articles_citing
@@ -51,6 +54,13 @@ from services.watcher_bridge import WatcherBridge, FileEvent
 from services.paths import normalize_path
 from services.gpu_detect import detect_gpu
 from services.llm_service import validate_connection as llm_validate_connection
+from services.git_sync import (
+    init_repo as git_init_repo,
+    set_remote as git_set_remote,
+    get_status as git_get_status,
+    push as git_push,
+    pull as git_pull,
+)
 from services.ingestion.job_queue import ingest_queue, JobStatus
 from services.ingestion.normalizer import (
     ingest_markdown, ingest_pdf, ingest_url, detect_source_type,
@@ -689,6 +699,67 @@ async def generate_ontology_endpoint(request: OnboardingGenerateRequest):
     except Exception as e:
         logger.error("Ontology generation failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─── Sync Endpoints ─────────────────────────────────────────────────
+
+def _vault_root() -> str | None:
+    """Return the vault root (parent of clean-vault)."""
+    if not config.clean_vault_path:
+        return None
+    from pathlib import Path as _Path
+    return str(_Path(config.clean_vault_path).parent)
+
+
+@app.get("/sync/status", response_model=SyncStatusResponse)
+async def sync_status():
+    """Return git sync status for the vault."""
+    root = _vault_root()
+    if not root:
+        raise HTTPException(status_code=400, detail="Vault not initialised")
+    status = git_get_status(root)
+    return SyncStatusResponse(**status)
+
+
+@app.post("/sync/configure")
+async def sync_configure(request: SyncConfigRequest):
+    """Set the git remote URL and init repo if needed."""
+    root = _vault_root()
+    if not root:
+        raise HTTPException(status_code=400, detail="Vault not initialised")
+
+    git_init_repo(root)
+    result = git_set_remote(root, request.remote_url)
+    if not result["success"]:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return {"success": True, "remote_url": request.remote_url}
+
+
+@app.post("/sync/push", response_model=SyncActionResponse)
+async def sync_push(message: str | None = None):
+    """Stage all, commit if dirty, push to remote."""
+    root = _vault_root()
+    if not root:
+        raise HTTPException(status_code=400, detail="Vault not initialised")
+
+    git_init_repo(root)
+    result = git_push(root, message=message)
+    return SyncActionResponse(**result, files_changed=0)
+
+
+@app.post("/sync/pull", response_model=SyncActionResponse)
+async def sync_pull():
+    """Pull latest changes from remote (rebase)."""
+    root = _vault_root()
+    if not root:
+        raise HTTPException(status_code=400, detail="Vault not initialised")
+
+    result = git_pull(root)
+    return SyncActionResponse(
+        success=result["success"],
+        files_changed=result["files_changed"],
+        error=result["error"],
+    )
 
 
 # ─── Entry Point ────────────────────────────────────────────────────

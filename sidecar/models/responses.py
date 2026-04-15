@@ -130,3 +130,31 @@ class FileContentResponse(BaseModel):
 class FileWriteRequest(BaseModel):
     path: str
     content: str
+
+
+# ─── Sync Models ──────────────────────────────────────────────────
+
+class SyncStatusResponse(BaseModel):
+    is_repo: bool
+    has_remote: bool
+    remote_url: Optional[str] = None
+    last_commit_hash: Optional[str] = None
+    last_commit_message: Optional[str] = None
+    last_commit_time: Optional[int] = None  # unix timestamp
+    dirty_files: int = 0
+    ahead: int = 0
+    behind: int = 0
+    branch: Optional[str] = None
+    error: Optional[str] = None
+
+
+class SyncConfigRequest(BaseModel):
+    remote_url: str
+
+
+class SyncActionResponse(BaseModel):
+    success: bool
+    committed: bool = False
+    pushed: bool = False
+    files_changed: int = 0
+    error: Optional[str] = None

@@ -1,13 +1,14 @@
 /**
- * SettingsPanel — LLM provider configuration (Phase 9).
+ * SettingsPanel — LLM + Sync configuration.
  *
- * Slide-in panel from the right. Shows current provider,
- * lets the user swap model providers and enter an API key.
- * Validates the key against the sidecar before saving.
+ * Slide-in panel with two tabs: LLM provider setup and git-based sync.
  */
 
 import { useState, useEffect, useCallback } from "react";
 import { getLLMConfig, validateLLM, type LLMConfig } from "@/api/sidecar";
+import { SyncPanel } from "./SyncPanel";
+
+type Tab = "llm" | "sync";
 
 const PROVIDERS = [
   {
@@ -47,6 +48,7 @@ interface SettingsPanelProps {
 type Status = "idle" | "validating" | "success" | "error";
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
+  const [tab, setTab] = useState<Tab>("llm");
   const [config, setConfig] = useState<LLMConfig | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -132,21 +134,44 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       {/* Panel */}
       <aside className="fixed right-0 top-0 z-50 flex h-full w-80 flex-col border-l border-stone-200 bg-white shadow-xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-stone-100 px-4 py-3">
-          <h2 className="text-sm font-semibold text-stone-800">Settings</h2>
-          <button
-            onClick={onClose}
-            className="rounded p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
-            aria-label="Close settings"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <line x1="2" y1="2" x2="12" y2="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-              <line x1="12" y1="2" x2="2" y2="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-            </svg>
-          </button>
+        <div className="border-b border-stone-100 px-4 pt-3">
+          <div className="flex items-center justify-between pb-2">
+            <h2 className="text-sm font-semibold text-stone-800">Settings</h2>
+            <button
+              onClick={onClose}
+              className="rounded p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+              aria-label="Close settings"
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <line x1="2" y1="2" x2="12" y2="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                <line x1="12" y1="2" x2="2" y2="12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+          {/* Tab bar */}
+          <div className="flex gap-0">
+            {(["llm", "sync"] as Tab[]).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`border-b-2 px-3 pb-2 text-xs font-medium capitalize transition-colors ${
+                  tab === t
+                    ? "border-stone-800 text-stone-800"
+                    : "border-transparent text-stone-400 hover:text-stone-600"
+                }`}
+              >
+                {t === "llm" ? "LLM" : "Sync"}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+          {/* ── Sync tab ─────────────────────────────── */}
+          {tab === "sync" && <SyncPanel />}
+
+          {/* ── LLM tab ──────────────────────────────── */}
+          {tab === "llm" && <>
           {/* Current status banner */}
           {!loading && config && (
             <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${
@@ -312,11 +337,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               </p>
             )}
           </div>
+          </> /* end LLM tab */}
         </div>
 
         {/* Footer */}
         <div className="border-t border-stone-100 px-4 py-3 text-[11px] text-stone-400">
-          Keys are stored locally in your vault config file only.
+          {tab === "llm"
+            ? "Keys are stored locally in your vault config file only."
+            : "Sync uses git — your vault history is preserved across all changes."}
         </div>
       </aside>
     </>

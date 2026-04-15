@@ -266,6 +266,59 @@ export async function validateLLM(payload: {
   return res.json();
 }
 
+// ─── Sync ──────────────────────────────────────────────────────────
+
+export interface SyncStatus {
+  is_repo: boolean;
+  has_remote: boolean;
+  remote_url: string | null;
+  last_commit_hash: string | null;
+  last_commit_message: string | null;
+  last_commit_time: number | null;
+  dirty_files: number;
+  ahead: number;
+  behind: number;
+  branch: string | null;
+  error: string | null;
+}
+
+export interface SyncActionResult {
+  success: boolean;
+  committed: boolean;
+  pushed: boolean;
+  files_changed: number;
+  error: string | null;
+}
+
+export async function getSyncStatus(): Promise<SyncStatus> {
+  const res = await fetch(`${baseUrl()}/sync/status`);
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function configureSyncRemote(remoteUrl: string): Promise<{ success: boolean; remote_url: string }> {
+  const res = await fetch(`${baseUrl()}/sync/configure`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ remote_url: remoteUrl }),
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function syncPush(message?: string): Promise<SyncActionResult> {
+  const params = message ? `?message=${encodeURIComponent(message)}` : "";
+  const res = await fetch(`${baseUrl()}/sync/push${params}`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function syncPull(): Promise<SyncActionResult> {
+  const res = await fetch(`${baseUrl()}/sync/pull`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 // ─── Runs ──────────────────────────────────────────────────────────
 
 export async function getRuns(
