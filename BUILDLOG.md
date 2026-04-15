@@ -4,6 +4,46 @@ Reverse-chronological log of all development activity. This is the primary conte
 
 ---
 
+## 2026-04-14 — [Phase 11.0] Packaging + Distribution
+
+**What changed:**
+
+Sidecar bundling (PyInstaller):
+- `sidecar/vanilla-sidecar.spec` — PyInstaller spec: single-file binary, full hidden import list for uvicorn/fastapi/sqlalchemy, excludes ML/test packages, `console=True` so Tauri can read stdout
+- `sidecar/requirements-build.txt` — minimal build-time Python deps (no crewai/marker which are loaded lazily at runtime)
+- `scripts/build-sidecar.sh` — Mac/Linux: detects platform triple (aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-gnu), runs PyInstaller, copies binary to `src-tauri/binaries/`
+- `scripts/build-sidecar.ps1` — Windows: same flow for x86_64-pc-windows-msvc
+
+Full build scripts:
+- `scripts/build.sh` — 3-step: build sidecar → npm ci → npx tauri build
+- `scripts/build.ps1` — Windows equivalent
+
+Tauri configuration:
+- `src-tauri/tauri.conf.json` — `productName` → "VanillaDB", `bundle.externalBin` declares sidecar path, `plugins.updater` configured for GitHub Releases endpoint (pubkey to be generated per RELEASE.md), window minWidth 900
+- `src-tauri/capabilities/default.json` — added `shell:allow-execute` for sidecar spawning
+- `src-tauri/Cargo.toml` — added `tauri-plugin-updater = "2"`, updated description
+- `src-tauri/src/lib.rs` — `spawn_sidecar()`: uses `ShellExt::sidecar()` to launch the binary, reads stdout line-by-line, parses `VANILLA_PORT:<n>`, emits `"sidecar-ready"` event to frontend window; updater plugin registered; `VANILLA_NO_SIDECAR=1` env var skips spawn in debug mode
+
+Frontend sidecar wiring:
+- `src/hooks/useTauriSidecar.ts` — NEW hook: detects `__TAURI_INTERNALS__`, dynamically imports `@tauri-apps/api/event`, listens for `"sidecar-ready"`, writes port to localStorage and calls `setSidecarPort()`/`setSidecarConnected(true)` — no-op in browser dev mode
+- `src/App.tsx` — calls `useTauriSidecar()` at top of App component
+
+CI/CD:
+- `.github/workflows/build.yml` — 4-platform matrix (Windows x64, macOS ARM, macOS x64, Linux x64); steps: checkout → system deps (Linux) → Python+PyInstaller → Node→npm ci → Rust → `tauri-apps/tauri-action` → draft GitHub release; signing secrets documented in env block
+
+**How to release:**
+1. Generate updater key: `npx tauri signer generate -w ~/.tauri/vanilla.key`
+2. Add `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to GitHub repo secrets
+3. Add Apple signing secrets (macOS notarisation) if needed
+4. Push a version tag: `git tag v0.1.0 && git push --tags`
+5. CI builds all four platforms and creates a draft GitHub Release
+
+**Tests:** All 194 Python + 14 TypeScript tests passing. Zero TS errors.
+
+**Project complete ✅ — all 11 phases shipped.**
+
+---
+
 ## 2026-04-14 — [Phase 10.0] Cloud Sync (Git-based)
 
 **What changed:**

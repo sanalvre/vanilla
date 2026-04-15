@@ -16,6 +16,7 @@ import { CommandPalette } from "./components/command/CommandPalette";
 import { Logo } from "./components/layout/Logo";
 import { SearchPanel } from "./components/layout/SearchPanel";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
+import { useTauriSidecar } from "./hooks/useTauriSidecar";
 
 // Lazy load graph (pulls Three.js ~500KB)
 const GraphPanel = lazy(() =>
@@ -39,6 +40,9 @@ function App() {
 
   const { agentStatus, currentPhase, pendingProposals, startPolling, stopPolling } =
     useStatusStore();
+
+  // Wire Tauri sidecar port discovery (no-op in browser dev mode)
+  useTauriSidecar();
 
   const graphVisible = useEditorStore((s) => s.graphVisible);
   const graphSplitPercent = useEditorStore((s) => s.graphSplitPercent);

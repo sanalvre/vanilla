@@ -19,7 +19,8 @@
       "Bash(C:Python310python.exe -m pip install --upgrade setuptools wheel -q)",
       "Bash(npx tsc:*)",
       "Bash(curl -s http://localhost:55140/health)",
-      "mcp__Desktop_Commander__read_file"
+      "mcp__Desktop_Commander__read_file",
+      "Bash(python -m pytest C:/Users/User/OneDrive/Desktop/VanillaDB/tests/python/ -x -q)"
     ]
   }
 }

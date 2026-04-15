@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicedoc/doc-schemas/master/tauri-v2.json",
-  "productName": "Vanilla",
+  "productName": "VanillaDB",
   "version": "0.1.0",
-  "identifier": "com.vanilla.app",
+  "identifier": "com.vanilladb.app",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:1420",
@@ -12,12 +12,12 @@
   "app": {
     "windows": [
       {
-        "title": "Vanilla",
-        "width": 1200,
-        "height": 800,
+        "title": "VanillaDB",
+        "width": 1280,
+        "height": 840,
         "resizable": true,
         "fullscreen": false,
-        "minWidth": 800,
+        "minWidth": 900,
         "minHeight": 600
       }
     ],
@@ -34,6 +34,26 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "externalBin": [
+      "binaries/vanilla-sidecar"
+    ],
+    "resources": [],
+    "copyright": "© 2026 VanillaDB",
+    "category": "Productivity",
+    "shortDescription": "Agent-native knowledge base",
+    "longDescription": "VanillaDB is an agent-native desktop knowledge base. Ingest documents, let AI agents extract concepts and build a knowledge graph, then explore and edit your vault with a rich editor."
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/YOUR_GITHUB_USERNAME/vanilladb/releases/latest/download/latest.json"
+      ],
+      "dialog": true,
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
