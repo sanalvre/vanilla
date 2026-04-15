@@ -4,6 +4,49 @@ Reverse-chronological log of all development activity. This is the primary conte
 
 ---
 
+## 2026-04-14 — [Phase 7.0] Rich UI: Editor, Graph, Command Palette
+
+**What changed:**
+
+Backend:
+- `sidecar/main.py` — 3 new endpoints: `GET /vault/files` (combined directory tree), `GET /vault/file?path=` (read file content with traversal guard), `POST /vault/file` (write file, clean-vault only)
+- `sidecar/models/responses.py` — 3 new Pydantic models: `FileTreeNode` (recursive), `FileContentResponse`, `FileWriteRequest`
+
+Frontend stores & API:
+- `src/api/sidecar.ts` — `getVaultFiles()`, `getFileContent()`, `saveFileContent()` + `FileTreeNode` interface
+- `src/stores/editorStore.ts` — Zustand store: active file, dirty tracking, auto-save on switch, read-only for wiki files, graph visibility + split position persisted to localStorage
+- `src/stores/graphStore.ts` — Zustand store: graph nodes/edges, latest batch detection, 30s polling
+
+UI components (7 new files):
+- `src/components/layout/FileTree.tsx` — recursive collapsible file tree with folder/file icons, auto-refresh every 15s, active file highlighting
+- `src/components/editor/useCodemirror.ts` — CodeMirror 6 hook: creates/destroys EditorView, syncs external content without re-creating, custom warm-toned theme, markdown language support
+- `src/components/editor/EditorPanel.tsx` — React.memo-isolated editor wrapper with breadcrumb bar, dirty indicator, read-only badge, Cmd+S save
+- `src/components/graph/GraphPanel.tsx` — React.memo-isolated Reagraph visualization, custom theme matching app palette, highlights nodes from latest batch in amber, click-to-open articles
+- `src/components/layout/ResizableSplit.tsx` — custom vertical drag splitter (pointer events, no deps), clamped 20-80%
+- `src/components/command/CommandPalette.tsx` — cmdk overlay (Cmd+K): debounced file search, toggle graph, run agent, review proposals
+- `src/App.tsx` — full rewire: sidebar with FileTree + IngestStatus, right pane with ResizableSplit (graph top / editor bottom) or ProposalPanel, lazy-loaded GraphPanel, global keyboard shortcuts (Cmd+Shift+G graph toggle, Cmd+Shift+P proposals), command palette overlay, streamlined top bar with graph toggle + palette button + connection dot
+
+Styling:
+- `src/styles/main.css` — CodeMirror height fill, subtle scrollbars, cmdk group heading styles
+
+**Decisions:**
+- CodeMirror 6 over Milkdown: lighter, more stable, CM manages its own DOM so React.memo isolation is natural
+- GraphPanel lazy-loaded via React.lazy (Three.js is ~500KB, shouldn't block initial paint)
+- Separate Zustand stores (editor, graph, vault, status) prevent cross-contamination of re-renders between graph and editor
+- ResizableSplit is ~60 lines of custom code rather than pulling in react-resizable-panels
+- Graph defaults to 50% of right pane, user-adjustable 20-80%, persisted to localStorage
+- Command palette has only essential commands: file search, graph toggle, run agent, review proposals
+- Sidebar is narrow (224px) to maximize content area
+- File tree polls every 15s to pick up new ingested files without manual refresh
+
+**Dependencies added:** `@codemirror/commands`
+
+**Tests:** All 194 Python + 14 TypeScript tests passing. TypeScript compiles with zero errors. No new tests added (UI components are layout/rendering — testing strategy defers UI tests to E2E in Phase 11).
+
+**Next:** Phase 8 — Full-Text Search UI, or continue to Phases 9-11
+
+---
+
 ## 2026-04-14 — [Phase 6.0] Proposal Review UI
 
 **What changed:**

@@ -33,3 +33,37 @@ body {
   user-select: none;
   -webkit-user-select: none;
 }
+
+/* CodeMirror container fills parent */
+.cm-editor {
+  height: 100%;
+}
+
+/* Scrollbar styling — subtle */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d6d3d1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a29e;
+}
+
+/* cmdk overrides */
+[cmdk-group-heading] {
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #a8a29e;
+}

@@ -9,6 +9,18 @@ import { useVaultStore } from "@/stores/vaultStore";
 import { normalizePath } from "./paths";
 
 function baseUrl(): string {
+  // Check for override in query params or localStorage (for dev/testing)
+  const params = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+  const portOverride = params.get("port");
+  if (portOverride) {
+    localStorage.setItem("vanilla:sidecarPort", portOverride);
+  }
+
+  const stored = typeof window !== "undefined" ? localStorage.getItem("vanilla:sidecarPort") : null;
+  if (stored) {
+    return `http://127.0.0.1:${stored}`;
+  }
+
   const port = useVaultStore.getState().sidecarPort;
   return `http://127.0.0.1:${port}`;
 }
@@ -187,6 +199,40 @@ export async function search(
 }> {
   const params = new URLSearchParams({ q: query, vault, limit: String(limit) });
   const res = await fetch(`${baseUrl()}/search?${params}`);
+  return res.json();
+}
+
+// ─── Files ────────────────────────────────────────────────────────
+
+export interface FileTreeNode {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  children: FileTreeNode[];
+}
+
+export async function getVaultFiles(): Promise<{ tree: FileTreeNode[] }> {
+  const res = await fetch(`${baseUrl()}/vault/files`);
+  return res.json();
+}
+
+export async function getFileContent(path: string): Promise<{ path: string; content: string }> {
+  const params = new URLSearchParams({ path });
+  const res = await fetch(`${baseUrl()}/vault/file?${params}`);
+  if (!res.ok) throw new Error(`Failed to load file: ${res.statusText}`);
+  return res.json();
+}
+
+export async function saveFileContent(
+  path: string,
+  content: string,
+): Promise<{ success: boolean; path: string }> {
+  const res = await fetch(`${baseUrl()}/vault/file`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, content }),
+  });
+  if (!res.ok) throw new Error(`Failed to save file: ${res.statusText}`);
   return res.json();
 }
 

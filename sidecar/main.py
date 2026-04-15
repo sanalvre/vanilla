@@ -31,6 +31,9 @@ from models.responses import (
     VaultCreateRequest,
     VaultCreateResponse,
     FileEventRequest,
+    FileTreeNode,
+    FileContentResponse,
+    FileWriteRequest,
     IngestUrlRequest,
     LastRun,
     LLMValidateRequest,
@@ -423,6 +426,127 @@ async def wiki_stale():
     """Return all articles currently flagged as stale."""
     stale = repo.get_stale_articles()
     return {"stale_articles": stale}
+
+
+# ─── File Endpoints ────────────────────────────────────────────────
+
+def _build_tree(root_path: str, prefix: str) -> FileTreeNode:
+    """
+    Recursively build a directory tree rooted at root_path.
+    prefix is the vault-relative path segment (e.g. "clean-vault").
+    Excludes hidden files/dirs and staging/ under wiki-vault.
+    """
+    from pathlib import Path
+
+    root = Path(root_path)
+    children: list[FileTreeNode] = []
+    dirs: list[FileTreeNode] = []
+    files: list[FileTreeNode] = []
+
+    if root.is_dir():
+        for entry in sorted(root.iterdir(), key=lambda e: e.name.lower()):
+            # Skip hidden files/dirs
+            if entry.name.startswith("."):
+                continue
+            # Skip staging/ under wiki-vault
+            if prefix.startswith("wiki-vault") and entry.name == "staging" and entry.is_dir():
+                continue
+
+            rel = f"{prefix}/{entry.name}"
+            if entry.is_dir():
+                dirs.append(_build_tree(str(entry), rel))
+            else:
+                files.append(FileTreeNode(
+                    name=entry.name,
+                    path=normalize_path(rel),
+                    type="file",
+                    children=[],
+                ))
+
+    # Directories first, then files — both alphabetically
+    children = dirs + files
+
+    return FileTreeNode(
+        name=Path(root_path).name,
+        path=normalize_path(prefix),
+        type="directory",
+        children=children,
+    )
+
+
+@app.get("/vault/files")
+async def vault_files():
+    """Return the directory tree for both vaults."""
+    if not config.clean_vault_path or not config.wiki_vault_path:
+        raise HTTPException(status_code=400, detail="Vault not initialized")
+
+    tree = [
+        _build_tree(config.clean_vault_path, "clean-vault"),
+        _build_tree(config.wiki_vault_path, "wiki-vault"),
+    ]
+    return {"tree": tree}
+
+
+@app.get("/vault/file", response_model=FileContentResponse)
+async def vault_file_read(path: str):
+    """Read file content by vault-relative path."""
+    from pathlib import Path
+
+    if ".." in path:
+        raise HTTPException(status_code=400, detail="Path traversal not allowed")
+
+    if not path.startswith("clean-vault/") and not path.startswith("wiki-vault/"):
+        raise HTTPException(status_code=400, detail="Path must start with clean-vault/ or wiki-vault/")
+
+    if not config.clean_vault_path or not config.wiki_vault_path:
+        raise HTTPException(status_code=400, detail="Vault not initialized")
+
+    # Resolve to absolute path
+    if path.startswith("clean-vault/"):
+        base = Path(config.clean_vault_path)
+        relative = path[len("clean-vault/"):]
+    else:
+        base = Path(config.wiki_vault_path)
+        relative = path[len("wiki-vault/"):]
+
+    file_path = base / relative
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return FileContentResponse(path=normalize_path(path), content=content)
+
+
+@app.post("/vault/file")
+async def vault_file_write(request: FileWriteRequest):
+    """Write file content. Only clean-vault paths are writable."""
+    from pathlib import Path
+
+    if ".." in request.path:
+        raise HTTPException(status_code=400, detail="Path traversal not allowed")
+
+    if not request.path.startswith("clean-vault/"):
+        raise HTTPException(status_code=400, detail="Only clean-vault/ paths are writable")
+
+    if not config.clean_vault_path:
+        raise HTTPException(status_code=400, detail="Vault not initialized")
+
+    relative = request.path[len("clean-vault/"):]
+    file_path = Path(config.clean_vault_path) / relative
+
+    # Ensure parent directories exist
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        file_path.write_text(request.content, encoding="utf-8")
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"success": True, "path": normalize_path(request.path)}
 
 
 # ─── Proposal Endpoints ─────────────────────────────────────────────

@@ -1,6 +1,7 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, lazy, Suspense } from "react";
 import { useVaultStore } from "./stores/vaultStore";
 import { useStatusStore } from "./stores/statusStore";
+import { useEditorStore } from "./stores/editorStore";
 import { startVaultWatcher, stopVaultWatcher } from "./api/fileWatcher";
 import { checkHealth } from "./api/sidecar";
 import { DropZone } from "./components/layout/DropZone";
@@ -8,6 +9,18 @@ import { UrlBar } from "./components/layout/UrlBar";
 import { IngestStatus } from "./components/layout/IngestStatus";
 import { OnboardingFlow } from "./components/onboarding/OnboardingFlow";
 import { ProposalPanel } from "./components/proposals/ProposalPanel";
+import { FileTree } from "./components/layout/FileTree";
+import { EditorPanel } from "./components/editor/EditorPanel";
+import { ResizableSplit } from "./components/layout/ResizableSplit";
+import { CommandPalette } from "./components/command/CommandPalette";
+import { Logo } from "./components/layout/Logo";
+
+// Lazy load graph (pulls Three.js ~500KB)
+const GraphPanel = lazy(() =>
+  import("./components/graph/GraphPanel").then((m) => ({
+    default: m.GraphPanel,
+  })),
+);
 
 function App() {
   const {
@@ -22,8 +35,13 @@ function App() {
     setVaultPaths,
   } = useVaultStore();
 
-  const { agentStatus, pendingProposals, startPolling, stopPolling } =
+  const { agentStatus, currentPhase, pendingProposals, startPolling, stopPolling } =
     useStatusStore();
+
+  const graphVisible = useEditorStore((s) => s.graphVisible);
+  const graphSplitPercent = useEditorStore((s) => s.graphSplitPercent);
+  const setSplitPercent = useEditorStore((s) => s.setSplitPercent);
+  const toggleGraph = useEditorStore((s) => s.toggleGraph);
 
   // Ingestion job tracking
   const [ingestJobs, setIngestJobs] = useState<
@@ -48,18 +66,24 @@ function App() {
 
   const handleIngestError = useCallback((error: string) => {
     console.error("Ingest error:", error);
-    // TODO: Show toast notification (Phase 7)
   }, []);
 
   const handleJobComplete = useCallback(
     (_jobId: string, _outputPath: string) => {
-      // File landed in clean-vault — refresh file tree (Phase 7)
+      // File landed in clean-vault — tree auto-refreshes via polling
     },
     [],
   );
 
   // Proposal panel visibility
   const [proposalPanelOpen, setProposalPanelOpen] = useState(false);
+
+  // Listen for command palette opening proposals
+  useEffect(() => {
+    const handler = () => setProposalPanelOpen(true);
+    window.addEventListener("vanilla:open-proposals", handler);
+    return () => window.removeEventListener("vanilla:open-proposals", handler);
+  }, []);
 
   // Auto-open panel when new proposals arrive
   useEffect(() => {
@@ -94,7 +118,6 @@ function App() {
   // Start file watcher when vault paths are known
   useEffect(() => {
     if (cleanVaultPath && wikiVaultPath) {
-      // Vault root is the parent of clean-vault
       const vaultRoot = cleanVaultPath.replace(/\/clean-vault$/, "");
       startVaultWatcher(cleanVaultPath, wikiVaultPath, vaultRoot).catch(
         (err) => {
@@ -107,6 +130,24 @@ function App() {
       };
     }
   }, [cleanVaultPath, wikiVaultPath]);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Cmd/Ctrl+Shift+G — toggle graph
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "g") {
+        e.preventDefault();
+        toggleGraph();
+      }
+      // Cmd/Ctrl+Shift+P — toggle proposals
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "p") {
+        e.preventDefault();
+        setProposalPanelOpen((o) => !o);
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [toggleGraph]);
 
   if (loading) {
     return (
@@ -124,7 +165,7 @@ function App() {
       <div className="flex h-full flex-col">
         {/* Top bar */}
         <header className="flex items-center justify-between border-b border-stone-200 px-4 py-2">
-          <h1 className="text-lg font-semibold tracking-tight">Vanilla</h1>
+          <Logo variant="full" size="md" />
           <div className="flex items-center gap-3 text-sm text-stone-500">
             {initialized && sidecarConnected && (
               <UrlBar
@@ -132,16 +173,27 @@ function App() {
                 onError={handleIngestError}
               />
             )}
-            <span>
-              Sidecar:{" "}
-              <span
-                className={
-                  sidecarConnected ? "text-green-600" : "text-red-500"
-                }
-              >
-                {sidecarConnected ? "connected" : "disconnected"}
-              </span>
-            </span>
+            <button
+              onClick={() => {
+                window.dispatchEvent(
+                  new KeyboardEvent("keydown", {
+                    key: "k",
+                    metaKey: true,
+                    bubbles: true,
+                  }),
+                );
+              }}
+              className="rounded border border-stone-200 px-2 py-0.5 text-xs text-stone-400 hover:bg-stone-50"
+              title="Command palette (Ctrl+K)"
+            >
+              {"\u2318"}K
+            </button>
+            <span
+              className={`h-2 w-2 rounded-full ${
+                sidecarConnected ? "bg-green-500" : "bg-red-400"
+              }`}
+              title={sidecarConnected ? "Connected" : "Disconnected"}
+            />
           </div>
         </header>
 
@@ -163,39 +215,44 @@ function App() {
             />
           ) : (
             <div className="flex flex-1">
-              {/* Left pane — file tree placeholder */}
-              <aside className="w-64 border-r border-stone-200 p-4">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wider text-stone-400">
-                  Clean Vault
-                </p>
-                <p className="text-sm text-stone-400">
-                  File tree (Phase 7)
-                </p>
-                {cleanVaultPath && (
-                  <p className="mt-2 truncate text-xs text-stone-300">
-                    {cleanVaultPath}
-                  </p>
-                )}
+              {/* Left sidebar — file tree */}
+              <aside className="flex w-56 shrink-0 flex-col border-r border-stone-200">
+                <div className="flex-1 overflow-y-auto px-2">
+                  <FileTree />
+                </div>
 
-                {/* Active ingestion jobs */}
+                {/* Ingestion status at bottom of sidebar */}
                 <IngestStatus
                   jobs={ingestJobs}
                   onJobComplete={handleJobComplete}
                 />
               </aside>
 
-              {/* Right pane — proposal panel or content viewer */}
+              {/* Right area — graph + editor or proposals */}
               <section className="flex flex-1 overflow-hidden">
                 {proposalPanelOpen ? (
                   <ProposalPanel
                     onClose={() => setProposalPanelOpen(false)}
                   />
+                ) : graphVisible ? (
+                  <ResizableSplit
+                    splitPercent={graphSplitPercent}
+                    onSplitChange={setSplitPercent}
+                    top={
+                      <Suspense
+                        fallback={
+                          <div className="flex h-full items-center justify-center text-sm text-stone-400">
+                            Loading graph...
+                          </div>
+                        }
+                      >
+                        <GraphPanel />
+                      </Suspense>
+                    }
+                    bottom={<EditorPanel />}
+                  />
                 ) : (
-                  <div className="flex flex-1 items-center justify-center p-4">
-                    <p className="text-sm text-stone-400">
-                      Content viewer (Phase 7)
-                    </p>
-                  </div>
+                  <EditorPanel />
                 )}
               </section>
             </div>
@@ -204,20 +261,25 @@ function App() {
 
         {/* Bottom bar */}
         <footer className="flex items-center justify-between border-t border-stone-200 px-4 py-1.5 text-xs text-stone-400">
-          <span>
-            Agent:{" "}
-            <span
-              className={
-                agentStatus === "running"
-                  ? "text-blue-500"
-                  : agentStatus === "error"
-                    ? "text-red-500"
-                    : ""
-              }
-            >
-              {agentStatus}
+          <div className="flex items-center gap-3">
+            <span>
+              Agent:{" "}
+              <span
+                className={
+                  agentStatus === "running"
+                    ? "text-blue-500"
+                    : agentStatus === "error"
+                      ? "text-red-500"
+                      : ""
+                }
+              >
+                {agentStatus}
+              </span>
             </span>
-          </span>
+            {currentPhase && (
+              <span className="text-blue-400">{currentPhase}</span>
+            )}
+          </div>
           <span>
             {pendingProposals > 0 ? (
               <button
@@ -232,6 +294,9 @@ function App() {
             )}
           </span>
         </footer>
+
+        {/* Command palette overlay */}
+        <CommandPalette />
       </div>
     </DropZone>
   );

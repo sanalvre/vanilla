@@ -110,3 +110,23 @@ class RunPipelineResponse(BaseModel):
     run_id: Optional[str] = None
     dispatched: int = 0
     already_running: bool = False
+
+
+class FileTreeNode(BaseModel):
+    name: str
+    path: str
+    type: str  # "file" | "directory"
+    children: list["FileTreeNode"] = []
+
+
+FileTreeNode.model_rebuild()
+
+
+class FileContentResponse(BaseModel):
+    path: str
+    content: str
+
+
+class FileWriteRequest(BaseModel):
+    path: str
+    content: str

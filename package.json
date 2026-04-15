@@ -12,23 +12,30 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@codemirror/commands": "^6.10.3",
+    "@codemirror/lang-markdown": "^6.5.0",
+    "@codemirror/language": "^6.12.3",
+    "@codemirror/state": "^6.6.0",
+    "@codemirror/view": "^6.41.0",
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-shell": "^2",
-    "@tauri-apps/plugin-fs": "^2",
     "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-fs": "^2",
+    "@tauri-apps/plugin-shell": "^2",
+    "cmdk": "^1.1.1",
     "react": "^19",
     "react-dom": "^19",
+    "reagraph": "^4.30.8",
     "zustand": "^5"
   },
   "devDependencies": {
+    "@tailwindcss/vite": "^4",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
+    "tailwindcss": "^4",
     "typescript": "~5.8",
     "vite": "^6",
-    "vitest": "^3",
-    "@tailwindcss/vite": "^4",
-    "tailwindcss": "^4"
+    "vitest": "^3"
   }
 }

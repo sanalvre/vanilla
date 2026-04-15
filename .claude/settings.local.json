@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip --version)",
+      "Bash(pip3 --version)",
+      "Bash(git --version)",
+      "Bash(where rustup:*)",
+      "Bash(where cargo:*)",
+      "Bash(pip install:*)",
+      "Bash(python -m pytest tests/python/integration/ -v)",
+      "Bash(npx vitest:*)",
+      "Bash(export PATH=\"$PATH:C:/audt/.cargo/bin\")",
+      "Bash(cargo check:*)",
+      "Bash(python -m pytest tests/python/ -v --tb=short)",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(tasklist)",
+      "Bash(curl -s -X GET http://localhost:8000/health --connect-timeout 5)",
+      "Bash(curl -s http://localhost:1420/)",
+      "Bash(C:Python310python.exe -m pip install --upgrade setuptools wheel -q)",
+      "Bash(npx tsc:*)",
+      "Bash(curl -s http://localhost:55140/health)"
+    ]
+  }
+}
