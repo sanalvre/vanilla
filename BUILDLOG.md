@@ -4,6 +4,37 @@ Reverse-chronological log of all development activity. This is the primary conte
 
 ---
 
+## 2026-04-15 — [UI Polish] Dark mode, header cleanup, layout fix, OpenRouter prominence
+
+**What changed:**
+- `src/stores/themeStore.ts` — NEW: Zustand store managing dark/light mode preference. Reads system preference on first load, persists to `localStorage("vanilla:dark")`, applies/removes `.dark` class on `<html>`.
+- `src/styles/main.css` — Added `@variant dark (&:is(.dark *))` for Tailwind v4 class-based dark mode. CSS custom properties for both light (`:root`) and dark (`.dark`) themes. Dark scrollbar and mark colors.
+- `src/App.tsx`:
+  - Wired `useThemeStore` — `isDark` + `toggleDark` now live in header
+  - Logo size increased from `"md"` (26px) to `"lg"` (34px) per user feedback
+  - Removed ghost ⌘K button from header (shortcut still works globally via CommandPalette listener)
+  - Moon/sun toggle button: shows moon in light mode (click → dark), sun in dark mode (click → light)
+  - Separate gear/cog icon for Settings, using filled Heroicons-style path for visual clarity
+  - Added `dark:` classes to header, sidebar, footer for zinc-900/zinc-700 dark backgrounds
+  - Vault warnings bar gets amber dark variant
+- `src/components/layout/ResizableSplit.tsx` — Added `w-full` to root div. Previously the component only took its minimum natural width inside the flex parent, leaving a large blank right area.
+- `src/components/settings/SettingsPanel.tsx`:
+  - OpenRouter moved to first position in provider grid (was third)
+  - Added per-provider badge text: "100+ models" for OpenRouter, "no key" for Ollama
+  - Provider buttons now show label + badge in a two-line layout
+  - OpenRouter callout tip shown below grid when another provider is selected: "Tip: OpenRouter gives you access to 100+ models… Switch to OpenRouter ↗"
+  - OpenRouter models list expanded: added gpt-4o-mini, gemini-flash-1.5, mistral-7b
+
+**Decisions:**
+- Dark mode uses class-based approach (`.dark` on `<html>`) + CSS custom properties for body background/foreground, and Tailwind `dark:` prefix for structural components. This avoids touching every leaf component immediately — only structural chrome gets dark classes now; inner components can be progressively darkened.
+- Gear icon uses filled Heroicons cog path (20px viewBox) for a clean, recognisable gear vs the previous dashed-circle approach.
+- OpenRouter is now first to increase discoverability; it provides the broadest model access with a single key.
+
+**Tests:** TypeScript compiles clean (0 errors, `npx tsc --noEmit`). No new test files needed for UI-only changes.
+**Next:** Dark mode can be progressively extended to inner components (editor, file tree, search, proposals, command palette). Consider adding `dark:` classes to those in a follow-up pass.
+
+---
+
 ## 2026-04-14 — [Phase 11.0] Packaging + Distribution
 
 **What changed:**

@@ -54,7 +54,7 @@ export const ResizableSplit = memo(function ResizableSplit({
   );
 
   return (
-    <div ref={containerRef} className="flex h-full flex-col overflow-hidden">
+    <div ref={containerRef} className="flex h-full w-full flex-col overflow-hidden">
       {/* Top pane */}
       <div style={{ height: `${splitPercent}%` }} className="overflow-hidden">
         {top}

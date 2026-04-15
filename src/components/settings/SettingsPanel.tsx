@@ -12,8 +12,24 @@ type Tab = "llm" | "sync";
 
 const PROVIDERS = [
   {
+    id: "openrouter",
+    label: "OpenRouter",
+    badge: "100+ models",
+    models: [
+      "openai/gpt-4o",
+      "openai/gpt-4o-mini",
+      "anthropic/claude-sonnet-4-5",
+      "meta-llama/llama-3.1-70b-instruct",
+      "google/gemini-flash-1.5",
+      "mistralai/mistral-7b-instruct",
+    ],
+    keyPlaceholder: "sk-or-...",
+    docsUrl: "https://openrouter.ai/keys",
+  },
+  {
     id: "openai",
     label: "OpenAI",
+    badge: null,
     models: ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo"],
     keyPlaceholder: "sk-...",
     docsUrl: "https://platform.openai.com/api-keys",
@@ -21,20 +37,15 @@ const PROVIDERS = [
   {
     id: "anthropic",
     label: "Anthropic",
+    badge: null,
     models: ["claude-opus-4-5", "claude-sonnet-4-5", "claude-haiku-4-5"],
     keyPlaceholder: "sk-ant-...",
     docsUrl: "https://console.anthropic.com/keys",
   },
   {
-    id: "openrouter",
-    label: "OpenRouter",
-    models: ["openai/gpt-4o", "anthropic/claude-3.5-sonnet", "meta-llama/llama-3.1-70b-instruct"],
-    keyPlaceholder: "sk-or-...",
-    docsUrl: "https://openrouter.ai/keys",
-  },
-  {
     id: "ollama",
     label: "Ollama (local)",
+    badge: "no key",
     models: ["llama3.2", "mistral", "gemma2", "phi3"],
     keyPlaceholder: "No key needed",
     docsUrl: "https://ollama.com",
@@ -204,16 +215,36 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     setStatusMsg("");
                     setModel(p.models[0]);
                   }}
-                  className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                  className={`relative rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
                     provider === p.id
                       ? "border-stone-800 bg-stone-800 text-white"
                       : "border-stone-200 text-stone-600 hover:border-stone-300 hover:bg-stone-50"
                   }`}
                 >
-                  {p.label}
+                  <span className="block font-medium">{p.label}</span>
+                  {p.badge && (
+                    <span className={`mt-0.5 block text-[10px] leading-tight ${
+                      provider === p.id ? "text-stone-300" : "text-stone-400"
+                    }`}>
+                      {p.badge}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
+            {/* OpenRouter callout */}
+            {provider !== "openrouter" && (
+              <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+                <span className="font-medium">Tip:</span> OpenRouter gives you access to 100+ models
+                (GPT-4o, Claude, Llama, Gemini) with a single API key.{" "}
+                <button
+                  onClick={() => { setProvider("openrouter"); setModel("openai/gpt-4o"); setStatus("idle"); setStatusMsg(""); }}
+                  className="font-medium underline underline-offset-2 hover:text-amber-900"
+                >
+                  Switch to OpenRouter ↗
+                </button>
+              </div>
+            )}
           </div>
 
           {/* API key */}

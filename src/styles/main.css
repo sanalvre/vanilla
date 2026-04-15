@@ -1,13 +1,30 @@
 @import "tailwindcss";
 
+/* Enable class-based dark mode for Tailwind v4 */
+@variant dark (&:is(.dark *));
+
+/* ── Design tokens ───────────────────────────────────────────────── */
 :root {
+  color-scheme: light;
   --vanilla-bg: #fafaf9;
   --vanilla-fg: #1c1917;
   --vanilla-border: #e7e5e4;
+  --vanilla-subtle: #f5f5f4;
   --vanilla-accent: #78716c;
   --vanilla-highlight: #f59e0b;
 }
 
+.dark {
+  color-scheme: dark;
+  --vanilla-bg: #18181b;
+  --vanilla-fg: #fafaf9;
+  --vanilla-border: #3f3f46;
+  --vanilla-subtle: #27272a;
+  --vanilla-accent: #a1a1aa;
+  --vanilla-highlight: #f59e0b;
+}
+
+/* ── Base ────────────────────────────────────────────────────────── */
 html,
 body,
 #root {
@@ -28,18 +45,12 @@ body {
     sans-serif;
 }
 
-/* Prevent text selection during drag */
-.no-select {
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-/* CodeMirror container fills parent */
+/* ── CodeMirror ──────────────────────────────────────────────────── */
 .cm-editor {
   height: 100%;
 }
 
-/* Scrollbar styling — subtle */
+/* ── Scrollbars ──────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -54,11 +65,15 @@ body {
   border-radius: 3px;
 }
 
+.dark ::-webkit-scrollbar-thumb {
+  background: #52525b;
+}
+
 ::-webkit-scrollbar-thumb:hover {
   background: #a8a29e;
 }
 
-/* Search snippet highlight */
+/* ── Search snippet highlight ─────────────────────────────────────── */
 mark {
   background: #fef3c7;
   color: #92400e;
@@ -67,7 +82,18 @@ mark {
   font-style: normal;
 }
 
-/* cmdk overrides */
+.dark mark {
+  background: #451a03;
+  color: #fbbf24;
+}
+
+/* ── Drag — prevent text selection ──────────────────────────────── */
+.no-select {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── cmdk ────────────────────────────────────────────────────────── */
 [cmdk-group-heading] {
   padding: 4px 12px;
   font-size: 11px;
