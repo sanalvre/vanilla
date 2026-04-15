@@ -143,14 +143,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
       />
 
       {/* Panel */}
-      <aside className="fixed right-0 top-0 z-50 flex h-full w-80 flex-col border-l border-stone-200 bg-white shadow-xl">
+      <aside className="fixed right-0 top-0 z-50 flex h-full w-80 flex-col border-l border-stone-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900 dark:shadow-black/40">
         {/* Header */}
-        <div className="border-b border-stone-100 px-4 pt-3">
+        <div className="border-b border-stone-100 px-4 pt-3 dark:border-zinc-800">
           <div className="flex items-center justify-between pb-2">
-            <h2 className="text-sm font-semibold text-stone-800">Settings</h2>
+            <h2 className="text-sm font-semibold text-stone-800 dark:text-zinc-100">Settings</h2>
             <button
               onClick={onClose}
-              className="rounded p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+              className="rounded p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
               aria-label="Close settings"
             >
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
@@ -167,8 +167,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 onClick={() => setTab(t)}
                 className={`border-b-2 px-3 pb-2 text-xs font-medium capitalize transition-colors ${
                   tab === t
-                    ? "border-stone-800 text-stone-800"
-                    : "border-transparent text-stone-400 hover:text-stone-600"
+                    ? "border-stone-800 text-stone-800 dark:border-zinc-300 dark:text-zinc-100"
+                    : "border-transparent text-stone-400 hover:text-stone-600 dark:text-zinc-500 dark:hover:text-zinc-300"
                 }`}
               >
                 {t === "llm" ? "LLM" : "Sync"}
@@ -187,8 +187,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           {!loading && config && (
             <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${
               config.api_key_set
-                ? "bg-green-50 text-green-700"
-                : "bg-amber-50 text-amber-700"
+                ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400"
+                : "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
             }`}>
               <div className={`h-1.5 w-1.5 rounded-full ${
                 config.api_key_set ? "bg-green-500" : "bg-amber-500"
@@ -202,7 +202,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
           {/* Provider selection */}
           <div className="space-y-2">
-            <label className="block text-xs font-semibold uppercase tracking-wider text-stone-500">
+            <label className="block text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-zinc-500">
               Provider
             </label>
             <div className="grid grid-cols-2 gap-1.5">
@@ -217,14 +217,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   }}
                   className={`relative rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
                     provider === p.id
-                      ? "border-stone-800 bg-stone-800 text-white"
-                      : "border-stone-200 text-stone-600 hover:border-stone-300 hover:bg-stone-50"
+                      ? "border-stone-800 bg-stone-800 text-white dark:border-zinc-300 dark:bg-zinc-200 dark:text-zinc-900"
+                      : "border-stone-200 text-stone-600 hover:border-stone-300 hover:bg-stone-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
                   }`}
                 >
                   <span className="block font-medium">{p.label}</span>
                   {p.badge && (
                     <span className={`mt-0.5 block text-[10px] leading-tight ${
-                      provider === p.id ? "text-stone-300" : "text-stone-400"
+                      provider === p.id ? "text-stone-300 dark:text-zinc-600" : "text-stone-400 dark:text-zinc-600"
                     }`}>
                       {p.badge}
                     </span>
@@ -234,7 +234,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
             </div>
             {/* OpenRouter callout */}
             {provider !== "openrouter" && (
-              <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+              <div className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-[11px] text-amber-700 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-400">
                 <span className="font-medium">Tip:</span> OpenRouter gives you access to 100+ models
                 (GPT-4o, Claude, Llama, Gemini) with a single API key.{" "}
                 <button
@@ -251,14 +251,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           {!isOllama && (
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold uppercase tracking-wider text-stone-500">
+                <label className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-zinc-500">
                   API Key
                 </label>
                 <a
                   href={selectedProvider.docsUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="text-[11px] text-stone-400 underline-offset-2 hover:text-stone-600 hover:underline"
+                  className="text-[11px] text-stone-400 underline-offset-2 hover:text-stone-600 hover:underline dark:text-zinc-600 dark:hover:text-zinc-300"
                 >
                   Get key ↗
                 </a>
@@ -271,7 +271,9 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                   placeholder={selectedProvider.keyPlaceholder}
                   className="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 pr-9
                              text-xs text-stone-800 placeholder:text-stone-400
-                             focus:border-stone-400 focus:bg-white focus:outline-none transition-colors"
+                             focus:border-stone-400 focus:bg-white focus:outline-none transition-colors
+                             dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200
+                             dark:placeholder:text-zinc-600 dark:focus:border-zinc-500 dark:focus:bg-zinc-800"
                 />
                 <button
                   type="button"
@@ -301,7 +303,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           {/* Ollama base URL */}
           {isOllama && (
             <div className="space-y-1.5">
-              <label className="text-xs font-semibold uppercase tracking-wider text-stone-500">
+              <label className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-zinc-500">
                 Ollama URL
               </label>
               <input
@@ -311,9 +313,11 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                 placeholder="http://localhost:11434"
                 className="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2
                            text-xs text-stone-800 placeholder:text-stone-400
-                           focus:border-stone-400 focus:bg-white focus:outline-none transition-colors"
+                           focus:border-stone-400 focus:bg-white focus:outline-none transition-colors
+                           dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200
+                           dark:placeholder:text-zinc-600 dark:focus:border-zinc-500"
               />
-              <p className="text-[11px] text-stone-400">
+              <p className="text-[11px] text-stone-400 dark:text-zinc-600">
                 Make sure Ollama is running locally
               </p>
             </div>
@@ -321,7 +325,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
 
           {/* Model selection */}
           <div className="space-y-1.5">
-            <label className="text-xs font-semibold uppercase tracking-wider text-stone-500">
+            <label className="text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-zinc-500">
               Default Model
             </label>
             <select
@@ -329,13 +333,14 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               onChange={(e) => { setModel(e.target.value); setStatus("idle"); }}
               className="w-full rounded-lg border border-stone-200 bg-stone-50 px-3 py-2
                          text-xs text-stone-700 focus:border-stone-400 focus:outline-none
-                         transition-colors"
+                         transition-colors dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200
+                         dark:focus:border-zinc-500"
             >
               {selectedProvider.models.map((m) => (
                 <option key={m} value={m}>{m}</option>
               ))}
             </select>
-            <p className="text-[11px] text-stone-400">
+            <p className="text-[11px] text-stone-400 dark:text-zinc-600">
               Used for analysis and proposal generation
             </p>
           </div>
@@ -347,7 +352,8 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
               disabled={status === "validating"}
               className="flex w-full items-center justify-center gap-2 rounded-lg bg-stone-800
                          px-4 py-2.5 text-xs font-medium text-white transition-colors
-                         hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60"
+                         hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60
+                         dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-100"
             >
               {status === "validating" ? (
                 <>
@@ -372,7 +378,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-stone-100 px-4 py-3 text-[11px] text-stone-400">
+        <div className="border-t border-stone-100 px-4 py-3 text-[11px] text-stone-400 dark:border-zinc-800 dark:text-zinc-600">
           {tab === "llm"
             ? "Keys are stored locally in your vault config file only."
             : "Sync uses git — your vault history is preserved across all changes."}

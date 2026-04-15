@@ -123,7 +123,7 @@ export const Logo = memo(function Logo({
       {/* Wordmark */}
       {variant === "full" && (
         <span
-          className={`font-semibold tracking-tight ${textSize} text-stone-800`}
+          className={`font-semibold tracking-tight ${textSize} text-stone-800 dark:text-zinc-100`}
         >
           VanillaDB
         </span>

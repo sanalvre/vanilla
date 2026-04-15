@@ -102,3 +102,37 @@ mark {
   letter-spacing: 0.05em;
   color: #a8a29e;
 }
+
+.dark [cmdk-group-heading] {
+  color: #52525b;
+}
+
+/* ── CodeMirror dark mode ───────────────────────────────────────── */
+.dark .cm-editor {
+  background: #18181b;
+  color: #e4e4e7;
+}
+.dark .cm-scroller {
+  background: #18181b;
+}
+.dark .cm-gutters {
+  background: #18181b;
+  border-right-color: #3f3f46;
+  color: #52525b;
+}
+.dark .cm-activeLineGutter {
+  background: #27272a;
+}
+.dark .cm-activeLine {
+  background: #27272a;
+}
+.dark .cm-selectionBackground {
+  background: #3f3f46 !important;
+}
+.dark .cm-cursor,
+.dark .cm-dropCursor {
+  border-left-color: #f4f4f5;
+}
+.dark .cm-content {
+  caret-color: #f4f4f5;
+}

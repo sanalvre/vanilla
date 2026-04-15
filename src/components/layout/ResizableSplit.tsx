@@ -67,9 +67,11 @@ export const ResizableSplit = memo(function ResizableSplit({
         aria-label="Resize graph and editor"
         onPointerDown={handlePointerDown}
         className="group flex h-1.5 shrink-0 cursor-row-resize items-center
-                   justify-center bg-stone-100 hover:bg-stone-200 transition-colors"
+                   justify-center bg-stone-100 hover:bg-stone-200 transition-colors
+                   dark:bg-zinc-800 dark:hover:bg-zinc-700"
       >
-        <div className="h-0.5 w-8 rounded-full bg-stone-300 transition-colors group-hover:bg-stone-400" />
+        <div className="h-0.5 w-8 rounded-full bg-stone-300 transition-colors group-hover:bg-stone-400
+                        dark:bg-zinc-600 dark:group-hover:bg-zinc-500" />
       </div>
 
       {/* Bottom pane */}

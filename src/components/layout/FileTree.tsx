@@ -10,7 +10,7 @@ import { useEditorStore } from "@/stores/editorStore";
 
 function FolderIcon({ open }: { open: boolean }) {
   return (
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="shrink-0 text-stone-400">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" className="shrink-0 text-stone-400 dark:text-zinc-600">
       <path
         d={open
           ? "M1.5 3.5h5l1 1.5H14.5v8h-13z"
@@ -45,7 +45,7 @@ function TreeSkeleton() {
       {[80, 60, 90, 50, 70].map((w, i) => (
         <div
           key={i}
-          className="h-5 rounded bg-stone-100"
+          className="h-5 rounded bg-stone-100 dark:bg-zinc-800"
           style={{ width: `${w}%`, marginLeft: i > 1 ? "12px" : "0" }}
         />
       ))}
@@ -79,6 +79,7 @@ const TreeNode = memo(function TreeNode({
           aria-expanded={expanded}
           className="flex w-full items-center gap-1.5 rounded px-1 py-[3px] text-left text-xs
                      text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-700
+                     dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200
                      focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-400"
           style={{ paddingLeft: `${indent}px` }}
         >
@@ -106,8 +107,8 @@ const TreeNode = memo(function TreeNode({
       className={`flex w-full items-center gap-1.5 rounded px-1 py-[3px] text-left text-xs
                   transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amber-400
                   ${isActive
-                    ? "bg-stone-200 text-stone-900 font-medium"
-                    : "text-stone-500 hover:bg-stone-50 hover:text-stone-700"
+                    ? "bg-stone-200 text-stone-900 font-medium dark:bg-zinc-700 dark:text-zinc-100"
+                    : "text-stone-500 hover:bg-stone-50 hover:text-stone-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                   }`}
       style={{ paddingLeft: `${indent}px` }}
     >
@@ -147,8 +148,8 @@ export const FileTree = memo(function FileTree() {
   if (tree.length === 0) {
     return (
       <div className="px-3 py-4 text-center">
-        <p className="text-xs text-stone-400">No files yet</p>
-        <p className="mt-1 text-[11px] text-stone-300">Drop files to get started</p>
+        <p className="text-xs text-stone-400 dark:text-zinc-600">No files yet</p>
+        <p className="mt-1 text-[11px] text-stone-300 dark:text-zinc-700">Drop files to get started</p>
       </div>
     );
   }

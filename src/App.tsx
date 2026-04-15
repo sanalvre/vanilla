@@ -167,8 +167,8 @@ function App() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <p className="text-stone-500">Loading Vanilla...</p>
+      <div className="flex h-full items-center justify-center dark:bg-zinc-950">
+        <p className="text-stone-500 dark:text-zinc-500">Loading Vanilla...</p>
       </div>
     );
   }
@@ -263,7 +263,7 @@ function App() {
         )}
 
         {/* Main content */}
-        <main className="flex flex-1 overflow-hidden">
+        <main className="flex flex-1 overflow-hidden dark:bg-zinc-950">
           {!initialized ? (
             <OnboardingFlow
               onComplete={(cleanPath, wikiPath) => {
@@ -271,7 +271,7 @@ function App() {
               }}
             />
           ) : (
-            <div className="flex flex-1">
+            <div className="flex flex-1 dark:bg-zinc-900">
               {/* Left sidebar — search + file tree */}
               <aside className="flex w-56 shrink-0 flex-col border-r border-stone-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
                 {/* Sidebar header: search toggle */}
@@ -312,7 +312,7 @@ function App() {
               </aside>
 
               {/* Right area — graph + editor or proposals */}
-              <section className="flex flex-1 overflow-hidden">
+              <section className="flex flex-1 overflow-hidden dark:bg-zinc-900">
                 {proposalPanelOpen ? (
                   <ProposalPanel
                     onClose={() => setProposalPanelOpen(false)}
@@ -350,10 +350,10 @@ function App() {
               <span
                 className={
                   agentStatus === "running"
-                    ? "text-blue-500"
+                    ? "text-blue-500 dark:text-blue-400"
                     : agentStatus === "error"
-                      ? "text-red-500"
-                      : ""
+                      ? "text-red-500 dark:text-red-400"
+                      : "dark:text-zinc-400"
                 }
               >
                 {agentStatus}

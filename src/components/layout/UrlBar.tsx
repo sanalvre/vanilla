@@ -66,7 +66,8 @@ export function UrlBar({ onIngestStarted, onError }: UrlBarProps) {
       <button
         onClick={() => setIsOpen(true)}
         className="flex items-center gap-1 rounded px-2 py-1 text-xs text-stone-500
-                   hover:bg-stone-100 hover:text-stone-700 transition-colors"
+                   hover:bg-stone-100 hover:text-stone-700 transition-colors
+                   dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
         title="Paste a URL to ingest"
       >
         <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
@@ -91,7 +92,9 @@ export function UrlBar({ onIngestStarted, onError }: UrlBarProps) {
           placeholder="Paste URL and press Enter..."
           className="w-64 rounded border border-stone-200 bg-white px-2.5 py-1 text-xs
                      text-stone-800 placeholder:text-stone-400 transition-colors
-                     focus:border-stone-400 focus:outline-none disabled:opacity-60"
+                     focus:border-stone-400 focus:outline-none disabled:opacity-60
+                     dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200
+                     dark:placeholder:text-zinc-600 dark:focus:border-zinc-500"
           disabled={loading}
         />
         {/* Inline spinner */}

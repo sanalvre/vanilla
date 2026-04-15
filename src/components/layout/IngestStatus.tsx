@@ -99,14 +99,14 @@ export function IngestStatus({ jobs, onJobComplete }: IngestStatusProps) {
   if (visibleJobs.length === 0) return null;
 
   return (
-    <div className="border-t border-stone-100 px-2 py-2 space-y-1.5">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-300">
+    <div className="border-t border-stone-100 px-2 py-2 space-y-1.5 dark:border-zinc-800">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-stone-300 dark:text-zinc-700">
         Ingesting
       </p>
       {visibleJobs.map((job) => (
         <div key={job.jobId} className="text-xs">
           <div className="flex items-center justify-between gap-1">
-            <span className="truncate text-stone-600 flex-1">{job.label}</span>
+            <span className="truncate text-stone-600 flex-1 dark:text-zinc-400">{job.label}</span>
             <span
               className={`shrink-0 font-medium ${
                 job.status === "error"
@@ -124,7 +124,7 @@ export function IngestStatus({ jobs, onJobComplete }: IngestStatusProps) {
             </span>
           </div>
           {/* Progress bar */}
-          <div className="mt-0.5 h-0.5 w-full rounded-full bg-stone-100">
+          <div className="mt-0.5 h-0.5 w-full rounded-full bg-stone-100 dark:bg-zinc-800">
             <div
               className={`h-0.5 rounded-full transition-all duration-300 ${
                 job.status === "complete"
