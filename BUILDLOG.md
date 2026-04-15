@@ -4,6 +4,31 @@ Reverse-chronological log of all development activity. This is the primary conte
 
 ---
 
+## 2026-04-14 — [Phase 6.0] Proposal Review UI
+
+**What changed:**
+- `sidecar/main.py` — new endpoint `GET /proposals/{batch_id}/article/{filename}`: reads staged article markdown for preview; includes path traversal guard (rejects filenames containing `/`, `\`, or starting with `.`)
+- `src/api/sidecar.ts` — 3 new functions: `approveProposal()`, `rejectProposal()`, `getProposalArticle()`; added `batch_path` field to proposal type
+- `src/components/proposals/ProposalPanel.tsx` — slide-in right panel: fetches all pending batches, shows count, auto-closes when queue empties, refresh on resolve triggers status store update
+- `src/components/proposals/ProposalBatch.tsx` — per-batch card: summary, date, article list with action badges (create/update), inline preview load, approve all / reject buttons with busy/error states
+- `src/components/proposals/ArticlePreview.tsx` — raw markdown viewer in a scrollable monospace pane, closes via ✕ button
+- `src/App.tsx` — wired ProposalPanel into right pane; footer "N proposals pending" badge is now a clickable button that toggles the panel; `useEffect` auto-opens panel when `pendingProposals` transitions from 0 → N
+- `src/components/layout/IngestStatus.tsx` — removed unused `useCallback` import (TS error cleanup)
+- `src/stores/vaultStore.ts` — removed unused `get` param from zustand creator (TS error cleanup)
+
+**Decisions:**
+- Panel replaces the right-pane content viewer placeholder (Phase 7 will have the full viewer); clean toggle UX
+- Article content read via dedicated endpoint rather than filesystem access from frontend — keeps all file access server-side
+- Path traversal protection in the article endpoint: simple string check catches `..` attacks before `Path.exists()`
+- Auto-open on proposal arrival felt natural (agents did work → show it); user can dismiss by closing the panel
+- No markdown renderer yet — raw monospace view is readable and avoids pulling in a heavy dependency before Phase 7
+
+**Tests:** 3 new integration tests for `GET /proposals/{batch_id}/article/{filename}` (happy path, 404, path traversal rejection). TypeScript compiles with zero errors.
+
+**Next:** Phase 7 — Content viewer (file tree, markdown renderer, editor)
+
+---
+
 ## 2026-04-14 — [Phase 5.0] Main Agent Pipeline
 
 **What changed:**

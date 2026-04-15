@@ -7,6 +7,7 @@ import { DropZone } from "./components/layout/DropZone";
 import { UrlBar } from "./components/layout/UrlBar";
 import { IngestStatus } from "./components/layout/IngestStatus";
 import { OnboardingFlow } from "./components/onboarding/OnboardingFlow";
+import { ProposalPanel } from "./components/proposals/ProposalPanel";
 
 function App() {
   const {
@@ -56,6 +57,16 @@ function App() {
     },
     [],
   );
+
+  // Proposal panel visibility
+  const [proposalPanelOpen, setProposalPanelOpen] = useState(false);
+
+  // Auto-open panel when new proposals arrive
+  useEffect(() => {
+    if (pendingProposals > 0) {
+      setProposalPanelOpen(true);
+    }
+  }, [pendingProposals]);
 
   // Check sidecar health and vault state on mount
   useEffect(() => {
@@ -173,11 +184,19 @@ function App() {
                 />
               </aside>
 
-              {/* Right pane — content viewer placeholder */}
-              <section className="flex-1 p-4">
-                <p className="text-sm text-stone-400">
-                  Content viewer (Phase 7)
-                </p>
+              {/* Right pane — proposal panel or content viewer */}
+              <section className="flex flex-1 overflow-hidden">
+                {proposalPanelOpen ? (
+                  <ProposalPanel
+                    onClose={() => setProposalPanelOpen(false)}
+                  />
+                ) : (
+                  <div className="flex flex-1 items-center justify-center p-4">
+                    <p className="text-sm text-stone-400">
+                      Content viewer (Phase 7)
+                    </p>
+                  </div>
+                )}
               </section>
             </div>
           )}
@@ -201,10 +220,13 @@ function App() {
           </span>
           <span>
             {pendingProposals > 0 ? (
-              <span className="text-amber-600 font-medium">
+              <button
+                onClick={() => setProposalPanelOpen((o) => !o)}
+                className="font-medium text-amber-600 underline-offset-2 hover:underline"
+              >
                 {pendingProposals} proposal{pendingProposals !== 1 ? "s" : ""}{" "}
                 pending
-              </span>
+              </button>
             ) : (
               "Up to date"
             )}

@@ -22,7 +22,7 @@ interface VaultState {
   setSidecarConnected: (connected: boolean) => void;
 }
 
-export const useVaultStore = create<VaultState>((set, get) => ({
+export const useVaultStore = create<VaultState>((set) => ({
   cleanVaultPath: null,
   wikiVaultPath: null,
   initialized: false,

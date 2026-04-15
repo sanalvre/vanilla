@@ -425,13 +425,35 @@ async def wiki_stale():
     return {"stale_articles": stale}
 
 
-# ─── Proposal Endpoints (read-only for now, write in Phase 5) ──────
+# ─── Proposal Endpoints ─────────────────────────────────────────────
 
 @app.get("/proposals")
 async def list_proposals():
     """List all pending proposal batches."""
     batches = repo.get_pending_proposals()
     return {"batches": batches}
+
+
+@app.get("/proposals/{batch_id}/article/{filename}")
+async def get_proposal_article(batch_id: str, filename: str):
+    """Read the raw markdown content of a staged article for preview."""
+    if not config.wiki_vault_path:
+        raise HTTPException(status_code=400, detail="Wiki vault not configured")
+
+    from pathlib import Path
+    # Sanitize: only allow safe filenames (no path traversal)
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    article_path = Path(config.wiki_vault_path) / "staging" / batch_id / filename
+    if not article_path.exists():
+        raise HTTPException(status_code=404, detail="Article not found")
+
+    try:
+        content = article_path.read_text(encoding="utf-8")
+        return {"filename": filename, "content": content}
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/proposals/{batch_id}/approve", response_model=ProposalActionResponse)

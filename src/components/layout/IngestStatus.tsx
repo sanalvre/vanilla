@@ -2,7 +2,7 @@
  * IngestStatus — shows active ingestion job progress in the sidebar.
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { getIngestStatus } from "@/api/ingest";
 
 interface IngestJob {

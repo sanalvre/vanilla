@@ -404,3 +404,31 @@ class TestProposalRejectEndpoint:
         response = client.post("/proposals/batch_rej/reject", json={"reason": "not relevant"})
         assert response.status_code == 200
         assert response.json()["status"] == "rejected"
+
+
+# ─── Proposal Article Preview Endpoint ────────────────────────────
+
+class TestProposalArticleEndpoint:
+    def test_returns_404_for_missing(self, client, tmp_path):
+        app_config.wiki_vault_path = str(tmp_path / "wiki-vault")
+        response = client.get("/proposals/batch_x/article/nofile.md")
+        assert response.status_code == 404
+
+    def test_returns_article_content(self, client, tmp_path):
+        wiki = tmp_path / "wiki-vault"
+        staging = wiki / "staging" / "batch_abc"
+        staging.mkdir(parents=True)
+        (staging / "test-article.md").write_text("# Test\n\nContent.", encoding="utf-8")
+
+        app_config.wiki_vault_path = str(wiki)
+        response = client.get("/proposals/batch_abc/article/test-article.md")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["filename"] == "test-article.md"
+        assert "Content." in data["content"]
+
+    def test_rejects_path_traversal(self, client, tmp_path):
+        app_config.wiki_vault_path = str(tmp_path / "wiki-vault")
+        response = client.get("/proposals/batch_abc/article/..%2Fsecret.md")
+        # Should be 400 or 404 — never serve path traversal
+        assert response.status_code in (400, 404)

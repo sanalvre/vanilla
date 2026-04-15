@@ -122,6 +122,7 @@ export async function getProposals(): Promise<{
     batch_id: string;
     summary: string;
     status: string;
+    batch_path: string;
     articles: Array<{
       filename: string;
       title: string;
@@ -132,6 +133,40 @@ export async function getProposals(): Promise<{
   }>;
 }> {
   const res = await fetch(`${baseUrl()}/proposals`);
+  return res.json();
+}
+
+export async function approveProposal(
+  batchId: string,
+): Promise<{ batch_id: string; status: string; articles_written: number; errors: string[] }> {
+  const res = await fetch(`${baseUrl()}/proposals/${batchId}/approve`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Approve failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function rejectProposal(
+  batchId: string,
+  reason?: string,
+): Promise<{ batch_id: string; status: string }> {
+  const res = await fetch(`${baseUrl()}/proposals/${batchId}/reject`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  if (!res.ok) throw new Error(`Reject failed: ${res.statusText}`);
+  return res.json();
+}
+
+export async function getProposalArticle(
+  batchId: string,
+  filename: string,
+): Promise<{ filename: string; content: string }> {
+  const res = await fetch(
+    `${baseUrl()}/proposals/${batchId}/article/${encodeURIComponent(filename)}`,
+  );
+  if (!res.ok) throw new Error(`Could not load article: ${res.statusText}`);
   return res.json();
 }
 
