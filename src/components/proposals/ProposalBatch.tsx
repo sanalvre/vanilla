@@ -11,6 +11,7 @@ import {
   rejectProposal,
   getProposalArticle,
 } from "@/api/sidecar";
+import { useGraphStore } from "@/stores/graphStore";
 import { ArticlePreview } from "./ArticlePreview";
 
 interface Article {
@@ -60,6 +61,9 @@ export function ProposalBatch({ batch, onResolved }: ProposalBatchProps) {
     setError(null);
     try {
       await approveProposal(batch.batch_id);
+      // Immediately refresh the graph so the new nodes/edges are visible
+      // without waiting for the next 30-second poll cycle.
+      useGraphStore.getState().fetchGraph();
       onResolved();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Approve failed");
@@ -73,6 +77,7 @@ export function ProposalBatch({ batch, onResolved }: ProposalBatchProps) {
     setError(null);
     try {
       await rejectProposal(batch.batch_id);
+      useGraphStore.getState().fetchGraph();
       onResolved();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Reject failed");

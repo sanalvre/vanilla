@@ -22,7 +22,7 @@ Run with: `cd sidecar && python -m pytest ../tests/python/ -v`
 | `test_paths.py` | Path normalization (Windows backslash -> forward slash, relative path extraction) |
 | `test_vault_manager.py` | Vault creation, directory structure validation, template file generation |
 | `test_repository.py` | SQLite CRUD for all tables (proposals, agent_runs, stale_articles, FTS) |
-| `test_graph_service.py` | graph.json read/write, source_map lookups, stale detection |
+| `test_graph_service.py` | SQLite graph CRUD, source_map lookups, graph.json migration, stale detection |
 | `test_watcher_bridge.py` | Async event debounce, force dispatch, sync-write skip, pending path tracking |
 | `test_normalizer.py` | Source type detection, slugify, title extraction, MD/PDF/URL ingestion routing |
 | `test_job_queue.py` | Job lifecycle, status updates, active filtering, cleanup, unique IDs |
@@ -45,7 +45,10 @@ Run with: `npx vitest run`
 | Test file | What it covers |
 |-----------|---------------|
 | `paths.test.ts` | TypeScript path normalization matching Python behavior |
-| `stores.test.ts` | Zustand store logic (vault store, proposal store state transitions) |
+| `editorStore.test.ts` | Editor store reset(), split percent clamping |
+| `statusStore.test.ts` | Status store warning field population |
+| `graphStore.test.ts` | Graph store fetchGraph() API call and state update |
+| `fileWatcher.test.ts` | Watcher suppression path API |
 
 ## E2E Tests (`tests/e2e/`)
 

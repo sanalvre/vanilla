@@ -16,6 +16,7 @@ class LastRun(BaseModel):
     id: str
     completed_at: int  # unix timestamp
     tokens_used: int
+    warnings: list = []
 
 
 class StatusResponse(BaseModel):
@@ -23,6 +24,7 @@ class StatusResponse(BaseModel):
     current_phase: Optional[str] = None  # "ingest" | "analysis" | "proposal" | "fileback"
     last_run: Optional[LastRun] = None
     pending_proposals: int = 0
+    last_run_warnings: list = []
 
 
 class VaultStructureResponse(BaseModel):

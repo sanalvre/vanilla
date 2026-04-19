@@ -6,15 +6,9 @@
 /// - Plugin registration (shell, fs, dialog)
 /// - Tauri command handlers
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandEvent;
-
-/// Emit a vault:file-changed event to the frontend when files change.
-#[tauri::command]
-async fn start_watching(_app: tauri::AppHandle, vault_path: String) -> Result<String, String> {
-    Ok(format!("Watch registered for: {}", vault_path))
-}
 
 /// Get the app's data directory path (for SQLite, config, etc.)
 #[tauri::command]
@@ -100,7 +94,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
-            start_watching,
             get_app_data_dir,
         ])
         .setup(|app| {

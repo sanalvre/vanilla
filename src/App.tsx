@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, lazy, Suspense } from "react";
+import { useEffect, useRef, useState, useCallback, lazy, Suspense } from "react";
 import { useVaultStore } from "./stores/vaultStore";
 import { useStatusStore } from "./stores/statusStore";
 import { useEditorStore } from "./stores/editorStore";
@@ -125,6 +125,15 @@ function App() {
       return () => stopPolling();
     }
   }, [initialized, sidecarConnected, startPolling, stopPolling]);
+
+  // Reset editor state when vault is configured for the first time (false → true transition)
+  const prevInitialized = useRef(initialized);
+  useEffect(() => {
+    if (!prevInitialized.current && initialized) {
+      useEditorStore.getState().reset();
+    }
+    prevInitialized.current = initialized;
+  }, [initialized]);
 
   // Start file watcher when vault paths are known
   useEffect(() => {

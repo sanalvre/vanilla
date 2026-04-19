@@ -17,6 +17,7 @@ interface StatusState {
     tokensUsed: number;
   } | null;
   pendingProposals: number;
+  lastRunWarnings: Array<{ code: string; detail?: string; path?: string }>;
   polling: boolean;
   startPolling: () => void;
   stopPolling: () => void;
@@ -30,6 +31,7 @@ export const useStatusStore = create<StatusState>((set) => ({
   currentPhase: null,
   lastRun: null,
   pendingProposals: 0,
+  lastRunWarnings: [],
   polling: false,
 
   refresh: async () => {
@@ -46,6 +48,7 @@ export const useStatusStore = create<StatusState>((set) => ({
             }
           : null,
         pendingProposals: data.pending_proposals,
+        lastRunWarnings: Array.isArray(data.last_run_warnings) ? data.last_run_warnings : [],
       });
     } catch {
       // Sidecar may be temporarily unavailable

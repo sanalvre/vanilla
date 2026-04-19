@@ -19,9 +19,11 @@ Response: {
   "last_run": {
     "id": "run_abc123",
     "completed_at": 1713024000,
-    "tokens_used": 12340
+    "tokens_used": 12340,
+    "warnings": [{ "code": "rag_degraded", "detail": "..." }]
   } | null,
-  "pending_proposals": 3
+  "pending_proposals": 3,
+  "last_run_warnings": [{ "code": "rag_degraded" | "missing_ontology" | "missing_agents_md" | "skipped_file", "detail": "..." }]
 }
 ```
 

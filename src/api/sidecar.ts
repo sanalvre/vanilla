@@ -211,7 +211,7 @@ export interface FileTreeNode {
   children: FileTreeNode[];
 }
 
-export async function getVaultFiles(): Promise<{ tree: FileTreeNode[] }> {
+export async function getVaultFiles(): Promise<{ tree: FileTreeNode[]; tree_hash?: string }> {
   const res = await fetch(`${baseUrl()}/vault/files`);
   return res.json();
 }

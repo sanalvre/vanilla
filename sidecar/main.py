@@ -48,8 +48,16 @@ from models.responses import (
     SyncConfigRequest,
     SyncActionResponse,
 )
-from services.vault_manager import create_vault_structure, validate_vault_structure
-from services.graph_service import load_graph, get_articles_citing
+from services.vault_manager import create_vault_structure, validate_vault_structure, repair_structural_files
+from services.graph_service import (
+    get_all_nodes,
+    get_all_edges,
+    get_node,
+    get_node_neighbors,
+    get_articles_citing,
+    get_hub_summary,
+    upsert_hub_summary,
+)
 from services.watcher_bridge import WatcherBridge, FileEvent
 from services.paths import normalize_path
 from services.gpu_detect import detect_gpu
@@ -87,6 +95,19 @@ watcher_bridge: Optional[WatcherBridge] = None
 # When True, on_file_ready skips pipeline triggering (used during force dispatch)
 _suppress_pipeline_trigger = False
 
+# Prevents concurrent pipeline runs triggered by rapid file events
+_pipeline_lock = asyncio.Lock()
+
+
+async def _run_pipeline_locked(paths: list[str], cfg: VanillaConfig) -> None:
+    """Run the pipeline under a lock to prevent concurrent runs from simultaneous file events."""
+    async with _pipeline_lock:
+        # Re-check inside the lock — only one pipeline runs at a time.
+        if not pipeline_status.running:
+            await run_pipeline(paths, cfg)
+        else:
+            logger.debug("Pipeline already running, skipping trigger for: %s", paths)
+
 
 async def on_file_ready(event: FileEvent) -> None:
     """
@@ -98,15 +119,14 @@ async def on_file_ready(event: FileEvent) -> None:
     # Stale article detection: if a clean-vault file changed,
     # find all wiki articles that cite it and flag them
     if event.path.startswith("clean-vault/") and config.wiki_vault_path:
-        graph = load_graph(config.wiki_vault_path)
-        stale_articles = get_articles_citing(graph, event.path)
+        stale_articles = get_articles_citing(event.path)
         for article_path in stale_articles:
             repo.flag_stale_article(article_path, event.path)
             logger.info("Flagged stale article: %s (source changed: %s)", article_path, event.path)
 
     # Trigger the agent pipeline if not already running and not suppressed
-    if not _suppress_pipeline_trigger and not pipeline_status.running and config.initialized:
-        asyncio.create_task(run_pipeline([event.path], config))
+    if not _suppress_pipeline_trigger and config.initialized:
+        asyncio.create_task(_run_pipeline_locked([event.path], config))
 
 
 @asynccontextmanager
@@ -114,8 +134,18 @@ async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle."""
     global watcher_bridge
 
-    # Initialize SQLite database with WAL mode
-    init_db(get_db_path(config))
+    # Initialize SQLite database with WAL mode and vector extension
+    init_db(get_db_path(config), embedding_dims=config.llm.embedding_dims)
+
+    # One-time migration: import graph.json into SQLite graph tables
+    if config.wiki_vault_path:
+        repo.graph_migrate_from_json(config.wiki_vault_path)
+
+    # Repair structural files if they were corrupted by article content
+    if config.wiki_vault_path:
+        repaired = repair_structural_files(config.wiki_vault_path)
+        if repaired:
+            logger.warning("Repaired corrupted structural files on startup: %s", repaired)
 
     # Initialize watcher bridge with debounce
     vault_root = ""
@@ -169,11 +199,21 @@ async def status():
     last = repo.get_last_run()
 
     last_run = None
+    last_run_warnings: list = []
     if last:
+        run_warnings = last.get("warnings", [])
+        if isinstance(run_warnings, str):
+            import json as _json
+            try:
+                run_warnings = _json.loads(run_warnings)
+            except Exception:
+                run_warnings = []
+        last_run_warnings = run_warnings if isinstance(run_warnings, list) else []
         last_run = LastRun(
             id=last["run_id"],
             completed_at=last.get("completed_at", 0) or 0,
             tokens_used=last.get("tokens_used", 0) or 0,
+            warnings=last_run_warnings,
         )
 
     agent_status = "running" if pipeline_status.running else "idle"
@@ -183,6 +223,7 @@ async def status():
         current_phase=pipeline_status.current_phase,
         last_run=last_run,
         pending_proposals=pending,
+        last_run_warnings=last_run_warnings,
     )
 
 
@@ -222,6 +263,9 @@ async def vault_create(request: VaultCreateRequest):
         config.wiki_vault_path = result["wiki_vault_path"]
         config.initialized = True
         config.save()
+
+        # Repair structural files in case vault was previously corrupted
+        repair_structural_files(result["wiki_vault_path"])
 
         # Restart watcher bridge with the new vault root
         if watcher_bridge:
@@ -424,11 +468,9 @@ async def agent_run_now():
 @app.get("/wiki/graph")
 async def wiki_graph():
     """Return the current knowledge graph for Reagraph visualization."""
-    if not config.wiki_vault_path:
-        return {"nodes": [], "edges": [], "source_map": {}}
-
-    graph = load_graph(config.wiki_vault_path)
-    return graph
+    nodes = get_all_nodes()
+    edges = get_all_edges()
+    return {"nodes": nodes, "edges": edges}
 
 
 @app.get("/wiki/stale")
@@ -487,6 +529,9 @@ def _build_tree(root_path: str, prefix: str) -> FileTreeNode:
 @app.get("/vault/files")
 async def vault_files():
     """Return the directory tree for both vaults."""
+    import hashlib
+    import json as _json
+
     if not config.clean_vault_path or not config.wiki_vault_path:
         raise HTTPException(status_code=400, detail="Vault not initialized")
 
@@ -494,7 +539,11 @@ async def vault_files():
         _build_tree(config.clean_vault_path, "clean-vault"),
         _build_tree(config.wiki_vault_path, "wiki-vault"),
     ]
-    return {"tree": tree}
+    tree_dicts = [node.model_dump() for node in tree]
+    tree_hash = hashlib.md5(
+        _json.dumps(tree_dicts, sort_keys=True).encode()
+    ).hexdigest()[:8]
+    return {"tree": tree, "tree_hash": tree_hash}
 
 
 @app.get("/vault/file", response_model=FileContentResponse)
@@ -631,15 +680,249 @@ async def list_runs(limit: int = 20, offset: int = 0):
     return {"runs": runs}
 
 
+# ─── Agent Context & Graph Traversal ────────────────────────────────
+
+@app.get("/context")
+async def get_context(q: str, k: int = 5):
+    """
+    RAG context retrieval for AI agents.
+
+    Returns formatted context from the knowledge base, ready to inject into
+    a prompt. Unlike /search (which returns search metadata and snippets),
+    /context loads and returns the full article body for each result.
+
+    Agents should prefer this endpoint for prompt augmentation; /search
+    is better suited for UI result lists.
+    """
+    from pathlib import Path
+
+    if not q.strip():
+        return {"context": "", "sources": []}
+
+    if not config.wiki_vault_path:
+        raise HTTPException(status_code=400, detail="Wiki vault not configured")
+
+    query_emb = None
+    try:
+        from services.embedding_service import generate_embedding
+        query_emb = await generate_embedding(q, config)
+    except Exception as e:
+        logger.debug("Context query embedding failed, falling back to BM25: %s", e)
+
+    results = repo.hybrid_search(
+        query=q,
+        query_embedding=query_emb,
+        vault="wiki",
+        k=k,
+    )
+
+    context_blocks: list[str] = []
+    sources: list[dict] = []
+
+    for result in results:
+        sources.append({
+            "path": result["path"],
+            "title": result["title"],
+            "score": result.get("score", 0),
+        })
+
+        # Prefer full article body; fall back to the FTS snippet
+        article_file = Path(config.wiki_vault_path) / "concepts" / Path(result["path"]).name
+        if article_file.exists():
+            raw = article_file.read_text(encoding="utf-8")
+            # Strip YAML frontmatter so agents get clean prose
+            if raw.startswith("---"):
+                end = raw.find("---", 3)
+                body = raw[end + 3:].strip() if end != -1 else raw
+            else:
+                body = raw
+            # Truncate long articles to avoid blowing out context windows
+            context_blocks.append(f"## {result['title']}\n{body[:3000]}")
+        elif result.get("snippet"):
+            context_blocks.append(f"## {result['title']}\n{result['snippet']}")
+
+    return {
+        "context": "\n\n---\n\n".join(context_blocks),
+        "sources": sources,
+    }
+
+
+@app.get("/wiki/graph/concepts")
+async def list_graph_concepts(category: str = ""):
+    """
+    List all concept nodes in the knowledge graph.
+
+    Optionally filter by category (concept, model, method, algorithm, etc.).
+    Returns id, label, category, path, and total relationship count for each node.
+    """
+    nodes = get_all_nodes()
+
+    if category:
+        nodes = [n for n in nodes if n.get("category", "").lower() == category.lower()]
+
+    concepts = []
+    for node in nodes:
+        nid = node["id"]
+        rel_count = repo.graph_node_in_degree(nid)
+        concepts.append({
+            "id": nid,
+            "label": node["label"],
+            "category": node.get("category", ""),
+            "path": node.get("path", ""),
+            "relationship_count": rel_count,
+        })
+
+    return {"concepts": concepts, "total": len(concepts)}
+
+
+@app.get("/wiki/graph/concepts/{node_id}")
+async def get_graph_concept(node_id: str):
+    """
+    Get a single concept node with its full article content and relationships.
+
+    Returns the article body (frontmatter stripped) alongside a structured
+    list of inbound and outbound relationships so agents can build
+    relationship-aware context without reading graph.json directly.
+    Also returns hub_summary if this is a hub node (degree >= 3).
+    """
+    from pathlib import Path
+
+    if not config.wiki_vault_path:
+        raise HTTPException(status_code=400, detail="Wiki vault not configured")
+
+    node = get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Concept not found")
+
+    neighbors = get_node_neighbors(node_id)
+    relationships = [
+        {
+            "direction": n["direction"],
+            "peer_id": n["id"],
+            "peer_label": n["label"],
+            "type": n["relationship"],
+        }
+        for n in neighbors
+    ]
+
+    content: str | None = None
+    article_path = Path(config.wiki_vault_path) / "concepts" / f"{node_id}.md"
+    if article_path.exists():
+        raw = article_path.read_text(encoding="utf-8")
+        if raw.startswith("---"):
+            end = raw.find("---", 3)
+            content = raw[end + 3:].strip() if end != -1 else raw
+        else:
+            content = raw
+
+    hub_summary = get_hub_summary(node_id)
+
+    return {
+        "id": node["id"],
+        "label": node["label"],
+        "category": node.get("category", ""),
+        "path": node.get("path", ""),
+        "content": content,
+        "relationships": relationships,
+        "hub_summary": hub_summary,
+    }
+
+
+@app.get("/wiki/graph/concepts/{node_id}/neighbors")
+async def get_concept_neighbors(node_id: str, type: str = "", depth: int = 1):
+    """
+    Traverse the knowledge graph from a given concept node.
+
+    type:  optional relationship filter (uses, is-a, derived-from, …)
+    depth: 1 = direct neighbors only, 2 = include second-hop neighbors
+           (capped at 2 to prevent expensive full-graph scans)
+    """
+    if not get_node(node_id):
+        raise HTTPException(status_code=404, detail="Concept not found")
+
+    depth = min(max(depth, 1), 2)
+
+    neighbors = get_node_neighbors(node_id, edge_type=type)
+
+    if depth == 2:
+        seen = {node_id} | {n["id"] for n in neighbors}
+        for first_hop in list(neighbors):
+            for second in get_node_neighbors(first_hop["id"], edge_type=type):
+                if second["id"] not in seen:
+                    seen.add(second["id"])
+                    neighbors.append({**second, "hop": 2})
+
+    return {"node_id": node_id, "neighbors": neighbors, "total": len(neighbors)}
+
+
+@app.post("/wiki/graph/concepts/{node_id}/refresh-summary")
+async def refresh_hub_summary(node_id: str):
+    """
+    Manually trigger regeneration of the hub summary for a concept node.
+    Only meaningful for nodes with degree >= 3 (hub nodes).
+    """
+    node = get_node(node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="Concept not found")
+
+    try:
+        from services.llm_service import chat_completion
+
+        neighbors = get_node_neighbors(node_id)
+        neighbor_lines = "\n".join(
+            f"- {n['label']} (via {n['relationship']})"
+            for n in neighbors[:10]
+        )
+        prompt = (
+            f"Concept: {node['label']} (category: {node.get('category', '')})\n"
+            f"Connected to:\n{neighbor_lines}\n\n"
+            "Write 2–3 sentences summarizing what this concept represents "
+            "and how it relates to its neighbors. Be precise and factual."
+        )
+        model = config.llm.models.get("ingest", "gpt-4o-mini")
+        summary = await chat_completion(
+            provider=config.llm.provider,
+            api_key=config.llm.api_key,
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            base_url=config.llm.base_url,
+            max_tokens=200,
+            temperature=0.3,
+        )
+        upsert_hub_summary(node_id, summary.strip())
+        return {"node_id": node_id, "summary": summary.strip()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── Search Endpoint ────────────────────────────────────────────────
 
 @app.get("/search")
 async def search(q: str, vault: str = "all", limit: int = 20):
-    """Full-text search across indexed vault documents."""
+    """
+    Hybrid search across indexed vault documents.
+
+    Combines BM25 keyword ranking (FTS5) with semantic vector similarity
+    using Reciprocal Rank Fusion. Falls back to BM25-only if sqlite-vec
+    is unavailable or embedding generation fails.
+    """
     if not q.strip():
         return {"results": []}
 
-    results = repo.search_fts(q, vault=vault if vault != "all" else None, limit=limit)
+    # Generate query embedding for semantic search component
+    query_emb = None
+    try:
+        from services.embedding_service import generate_embedding
+        query_emb = await generate_embedding(q, config)
+    except Exception as e:
+        logger.debug("Query embedding failed, using BM25 only: %s", e)
+
+    results = repo.hybrid_search(
+        query=q,
+        query_embedding=query_emb,
+        vault=vault if vault != "all" else None,
+        k=limit,
+    )
     return {"results": results}
 
 

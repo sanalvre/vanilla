@@ -15,6 +15,18 @@ type UnwatchFn = () => void;
 let cleanVaultUnwatch: UnwatchFn | null = null;
 let wikiStagingUnwatch: UnwatchFn | null = null;
 
+// Suppressed paths: path → expiry timestamp (ms). Events for suppressed paths
+// are dropped once to absorb the echo from an editor save.
+const suppressedPaths = new Map<string, number>();
+
+/**
+ * Suppress the next watcher event for a vault-relative path for durationMs.
+ * Call this after saving a file from the editor to prevent a pipeline re-trigger.
+ */
+export function suppressWatcherPath(relativePath: string, durationMs = 2000): void {
+  suppressedPaths.set(relativePath, Date.now() + durationMs);
+}
+
 /**
  * Start watching the clean vault and wiki-vault/staging for file changes.
  * Events are forwarded to the sidecar via POST /internal/file-event.
@@ -55,7 +67,6 @@ export async function startVaultWatcher(
     console.warn("Could not watch staging directory (may not exist yet)");
   }
 
-  console.log("[FileWatcher] Watching:", cleanVaultPath, stagingPath);
 }
 
 /**
@@ -98,6 +109,13 @@ function handleWatchEvent(event: unknown, vaultRoot: string): void {
     if (filename.startsWith(".") && filename !== ".meta") continue;
 
     const relativePath = toRelative(absPath, vaultRoot);
+
+    // Drop this event if the path is suppressed (editor just saved it)
+    const expiry = suppressedPaths.get(relativePath);
+    if (expiry !== undefined) {
+      suppressedPaths.delete(relativePath);
+      if (Date.now() < expiry) continue;
+    }
 
     // Fire and forget — don't block the watcher
     sendFileEvent(relativePath, eventType).catch((err) => {

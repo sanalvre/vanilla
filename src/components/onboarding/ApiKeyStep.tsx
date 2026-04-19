@@ -6,8 +6,8 @@ type Provider = (typeof PROVIDERS)[number];
 
 const DEFAULT_MODELS: Record<Provider, string> = {
   openai: "gpt-4o",
-  anthropic: "claude-sonnet-4-20250514",
-  openrouter: "anthropic/claude-sonnet-4-20250514",
+  anthropic: "claude-opus-4-1-20250805",
+  openrouter: "anthropic/claude-opus-4-1-20250805",
   ollama: "llama3",
 };
 

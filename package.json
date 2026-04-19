@@ -1,6 +1,12 @@
 {
-  "name": "vanilla",
+  "name": "vanilladb",
   "version": "0.1.0",
+  "description": "Agent-native desktop knowledge base — ingest docs, build a knowledge graph, explore your vault.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/santiagoalvarez92592-8536/vanilladb"
+  },
   "private": true,
   "type": "module",
   "scripts": {
@@ -24,7 +30,7 @@
     "cmdk": "^1.1.1",
     "react": "^19",
     "react-dom": "^19",
-    "reagraph": "^4.30.8",
+    "react-force-graph-2d": "^1.29.1",
     "zustand": "^5"
   },
   "devDependencies": {

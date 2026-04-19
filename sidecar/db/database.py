@@ -4,13 +4,19 @@ SQLite database initialization and connection management.
 The Python sidecar is the sole owner of the SQLite database.
 WAL mode is enabled for concurrent read access from async tasks.
 All writes are serialized through the repository layer.
+
+sqlite-vec is loaded as an extension to support float32 vector embeddings
+for semantic search and RAG in the agent pipeline.
 """
 
+import logging
 import sqlite3
 from pathlib import Path
 from typing import Optional
 
 from config import VanillaConfig
+
+logger = logging.getLogger("vanilla.db")
 
 # Module-level connection (reused across requests)
 _connection: Optional[sqlite3.Connection] = None
@@ -86,13 +92,124 @@ CREATE TABLE IF NOT EXISTS stale_articles (
     flagged_at INTEGER
 );
 
--- Sync write tracking (for Supabase double-trigger prevention)
+-- Sync write tracking (prevents double-trigger when fileback writes wiki articles)
 CREATE TABLE IF NOT EXISTS sync_writes (
     id INTEGER PRIMARY KEY,
     path TEXT NOT NULL,
     sync_timestamp INTEGER NOT NULL
 );
+
+-- Key-value metadata store (used to persist embedding dims across restarts)
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+
+-- Knowledge graph nodes (replaces graph.json nodes array)
+CREATE TABLE IF NOT EXISTS graph_nodes (
+    id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    path TEXT NOT NULL,
+    category TEXT DEFAULT '',
+    last_batch TEXT DEFAULT ''
+);
+
+-- Knowledge graph edges (replaces graph.json edges array)
+CREATE TABLE IF NOT EXISTS graph_edges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+    target TEXT NOT NULL REFERENCES graph_nodes(id) ON DELETE CASCADE,
+    type TEXT NOT NULL DEFAULT 'wikilink',
+    UNIQUE(source, target, type)
+);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(source);
+CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target);
+
+-- Graph source map (replaces graph.json source_map dict)
+CREATE TABLE IF NOT EXISTS graph_source_map (
+    source_path TEXT NOT NULL,
+    article_path TEXT NOT NULL,
+    PRIMARY KEY (source_path, article_path)
+);
+CREATE INDEX IF NOT EXISTS idx_graph_source_map_source ON graph_source_map(source_path);
+
+-- Hub/cluster summaries for highly-connected concept nodes
+CREATE TABLE IF NOT EXISTS hub_summaries (
+    node_id TEXT PRIMARY KEY,
+    summary TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+);
 """
+
+
+def _load_sqlite_vec(conn: sqlite3.Connection) -> bool:
+    """
+    Load the sqlite-vec extension for vector search support.
+
+    Returns True if loaded successfully, False if sqlite-vec is not installed.
+    Vector search is gracefully disabled when the extension is unavailable.
+    """
+    try:
+        import sqlite_vec
+        conn.enable_load_extension(True)
+        sqlite_vec.load(conn)
+        conn.enable_load_extension(False)
+        logger.info("sqlite-vec loaded (version: %s)", sqlite_vec.__version__)
+        return True
+    except ImportError:
+        logger.warning("sqlite-vec not installed — semantic search disabled. pip install sqlite-vec")
+        return False
+    except Exception as e:
+        logger.warning("sqlite-vec failed to load: %s — semantic search disabled", e)
+        return False
+
+
+def _ensure_vec_table(conn: sqlite3.Connection, dims: int) -> None:
+    """
+    Create the vec_embeddings virtual table with the correct dimensions.
+
+    If the stored dimension count differs from the requested dims (e.g. user
+    switched embedding models), the old table is dropped and recreated.
+    Embeddings will be regenerated lazily on the next ingest/fileback cycle.
+    """
+    stored_row = conn.execute(
+        "SELECT value FROM meta WHERE key = 'embedding_dims'"
+    ).fetchone()
+
+    if stored_row is not None:
+        stored_dims = int(stored_row[0])
+        if stored_dims != dims:
+            logger.warning(
+                "Embedding dims changed (%d → %d), dropping vec_embeddings table. "
+                "Embeddings will regenerate on next ingest.",
+                stored_dims, dims,
+            )
+            conn.execute("DROP TABLE IF EXISTS vec_embeddings")
+
+    conn.execute(
+        f"""CREATE VIRTUAL TABLE IF NOT EXISTS vec_embeddings
+            USING vec0(rowid INTEGER PRIMARY KEY, embedding float[{dims}])"""
+    )
+    conn.execute(
+        "INSERT OR REPLACE INTO meta (key, value) VALUES ('embedding_dims', ?)",
+        (str(dims),),
+    )
+    conn.commit()
+
+
+def _run_column_migrations(conn: sqlite3.Connection) -> None:
+    """
+    Idempotently add columns that were added after the initial schema.
+
+    ALTER TABLE IF NOT EXISTS ... ADD COLUMN is not available in all SQLite
+    versions, so we check the existing columns first.
+    """
+    # agent_runs: add warnings column for surfacing pipeline degradation to the UI
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(agent_runs)")}
+    if "warnings" not in cols:
+        conn.execute("ALTER TABLE agent_runs ADD COLUMN warnings TEXT DEFAULT '[]'")
+        conn.commit()
+        logger.info("Migrated agent_runs: added warnings column")
 
 
 def get_db_path(config: VanillaConfig) -> Path:
@@ -100,9 +217,12 @@ def get_db_path(config: VanillaConfig) -> Path:
     return config.db_path
 
 
-def init_db(db_path: Path) -> sqlite3.Connection:
+def init_db(db_path: Path, embedding_dims: int = 1536) -> sqlite3.Connection:
     """
     Initialize the SQLite database with WAL mode and create all tables.
+
+    Loads the sqlite-vec extension for vector search if available.
+    Creates the vec_embeddings virtual table with the given dimensions.
 
     Returns the connection for reuse.
     """
@@ -117,9 +237,17 @@ def init_db(db_path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
 
-    # Create schema
+    # Create core schema (FTS, proposals, runs, graph tables, etc.)
     conn.executescript(SCHEMA_SQL)
     conn.commit()
+
+    # Add columns introduced after initial release (idempotent)
+    _run_column_migrations(conn)
+
+    # Load vector extension and create vec_embeddings table
+    vec_available = _load_sqlite_vec(conn)
+    if vec_available:
+        _ensure_vec_table(conn, embedding_dims)
 
     _connection = conn
     return conn
@@ -130,3 +258,13 @@ def get_connection() -> sqlite3.Connection:
     if _connection is None:
         raise RuntimeError("Database not initialized. Call init_db() first.")
     return _connection
+
+
+def is_vec_available() -> bool:
+    """Return True if the vec_embeddings table exists (sqlite-vec loaded successfully)."""
+    try:
+        conn = get_connection()
+        conn.execute("SELECT COUNT(*) FROM vec_embeddings LIMIT 1")
+        return True
+    except Exception:
+        return False

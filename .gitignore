@@ -59,3 +59,17 @@ htmlcov/
 ml-models/
 *.onnx
 *.bin
+
+# Compiled sidecar binary (built by PyInstaller / CI — not committed)
+src-tauri/binaries/
+
+# Local development / Claude Code tooling (not for public repos)
+.claude/
+BUILDLOG.md
+CHANGELOG.md
+
+# Tests and internal tooling (development-only, not part of public distribution)
+tests/
+
+# PyInstaller hook pycache
+sidecar/hooks/__pycache__/

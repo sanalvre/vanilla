@@ -26,7 +26,7 @@ File change in clean-vault/
 - **Model tier:** Cheap (gpt-4o-mini / claude-haiku)
 
 ### 2. Analysis Agent (`agents/analysis.py`)
-- **Reads:** Ingest metadata + existing wiki articles + graph.json + AGENTS.md + ontology.md
+- **Reads:** Ingest metadata + existing wiki articles + knowledge graph (SQLite) + AGENTS.md + ontology.md
 - **Outputs:** List of `{action: "create"|"update", concept, reason, sources}`
 - **Key behavior:** Re-reads AGENTS.md and ontology.md on EVERY run (never cached)
 - **Token budget:** 4,000 tokens (configurable)
@@ -44,7 +44,7 @@ File change in clean-vault/
 - **Actions:**
   - Writes approved articles to `wiki-vault/concepts/`
   - Updates `index.md` (alphabetical concept list)
-  - Updates `graph.json` (nodes, edges, source_map)
+  - Updates knowledge graph in SQLite (nodes, edges, source citations)
   - Cleans up staging batch directory
 - **Token budget:** Minimal (mostly file operations, not LLM)
 - **Model tier:** Cheap
@@ -89,7 +89,7 @@ class FilebackFlow(Flow):
 ## Stale Article Detection
 
 When a clean-vault file changes:
-1. Look up `source_map` in `graph.json` for all wiki articles citing it
+1. Look up source citations in SQLite (`graph_source_map`) for all wiki articles citing it
 2. Set `status: stale` in each article's frontmatter
 3. Insert rows into `stale_articles` SQLite table
 4. Stale articles are included in the next Analysis Agent run

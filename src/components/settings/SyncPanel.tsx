@@ -60,6 +60,12 @@ export function SyncPanel() {
   }, [remoteUrl, refresh]);
 
   const handlePush = useCallback(async () => {
+    if (status && status.dirty_files > 0) {
+      const ok = window.confirm(
+        `You have ${status.dirty_files} unsaved change${status.dirty_files > 1 ? "s" : ""}. Push anyway?`
+      );
+      if (!ok) return;
+    }
     setOp("pushing");
     setLastResult(null);
     try {

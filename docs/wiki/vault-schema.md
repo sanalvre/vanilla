@@ -12,7 +12,7 @@
   wiki-vault/                 # Agent-owned vault (human reads only)
     concepts/                 # Approved concept articles
     index.md                  # Auto-maintained master index
-    graph.json                # Serialized graph data (Reagraph + stale tracking)
+    index.md                  # Auto-maintained master concept index
     AGENTS.md                 # Constitution: schema, rules, ontology reference
     ontology.md               # User's domain ontology (from onboarding)
     staging/                  # Proposed articles awaiting approval
@@ -40,40 +40,38 @@ confidence: high          # high | medium | low
 ---
 ```
 
-## graph.json Schema
+## Knowledge Graph Schema
 
-```json
-{
-  "nodes": [
-    {
-      "id": "concept-name",
-      "label": "Concept Name",
-      "path": "wiki-vault/concepts/concept-name.md",
-      "category": "ontology-category",
-      "lastBatch": "batch_003"
-    }
-  ],
-  "edges": [
-    {
-      "source": "concept-a",
-      "target": "concept-b",
-      "type": "wikilink"
-    }
-  ],
-  "source_map": {
-    "clean-vault/raw/paper_a.md": [
-      "wiki-vault/concepts/concept-name.md"
-    ]
-  }
-}
+The knowledge graph is stored in SQLite (not on disk as a JSON file). Three tables:
+
+**`graph_nodes`** — one row per concept article:
+```
+id TEXT PRIMARY KEY       -- slug (e.g. "transformer-architecture")
+label TEXT                -- display name
+path TEXT                 -- vault-relative path to article
+category TEXT             -- ontology category
+last_batch TEXT           -- batch_id that last wrote this node
 ```
 
-- `nodes` and `edges`: consumed by Reagraph for visualization
-- `source_map`: used by stale article detection (when a source changes, look up all articles citing it)
+**`graph_edges`** — typed relationships between concepts:
+```
+source TEXT               -- source node id
+target TEXT               -- target node id
+type TEXT                 -- wikilink | uses | is-a | derived-from | extends | contrasts-with | implements | part-of | related-to
+UNIQUE(source, target, type)
+```
+
+**`graph_source_map`** — which articles cite which source files (used for stale detection):
+```
+source_path TEXT          -- clean-vault relative path
+article_path TEXT         -- wiki-vault relative path
+```
+
+The graph is queried via REST endpoints (`GET /wiki/graph/concepts`, `/wiki/graph/concepts/{id}/neighbors`) and exposed as MCP tools.
 
 ## Path Normalization Rules
 
-All paths stored in frontmatter, graph.json, and SQLite use forward slashes regardless of OS:
+All paths stored in frontmatter and SQLite use forward slashes regardless of OS:
 - Windows: `C:\Users\User\Vanilla\clean-vault\raw\paper.md` -> stored as `clean-vault/raw/paper.md`
 - macOS: `/Users/user/Vanilla/clean-vault/raw/paper.md` -> stored as `clean-vault/raw/paper.md`
 

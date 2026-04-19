@@ -30,7 +30,6 @@ export function useTauriSidecar() {
 
         unlisten = await listen<number>("sidecar-ready", (event) => {
           const port = event.payload;
-          console.log(`[Tauri] Sidecar ready on port ${port}`);
 
           // Persist for the baseUrl() helper in sidecar.ts
           localStorage.setItem("vanilla:sidecarPort", String(port));

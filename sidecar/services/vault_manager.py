@@ -2,15 +2,19 @@
 Vault directory creation and validation.
 
 Creates and validates the two-vault structure (clean-vault + wiki-vault).
-Never auto-repairs — only warns about missing components.
+Repairs corrupted structural files (AGENTS.md, ontology.md, index.md) by
+detecting article content written into them, backing up, and restoring defaults.
 """
 
-import json
+import logging
 import os
+import time
 from pathlib import Path
 from typing import Optional, List
 
 from services.paths import normalize_path
+
+logger = logging.getLogger("vanilla.vault_manager")
 
 
 # Default template for AGENTS.md — the agent constitution
@@ -24,7 +28,7 @@ and generating wiki content. The agent re-reads this file on every run.
 - `concepts/` — Approved concept articles (one per concept)
 - `staging/` — Proposed articles awaiting human approval
 - `index.md` — Auto-maintained alphabetical index of all concepts
-- `graph.json` — Serialized graph data for visualization and stale tracking
+- Knowledge graph stored in SQLite (graph_nodes, graph_edges, graph_source_map tables)
 
 ## Rules
 
@@ -81,13 +85,6 @@ DEFAULT_INDEX_MD = """# Wiki Index
 (No concepts yet. Approve proposals to populate this index.)
 """
 
-DEFAULT_GRAPH_JSON = {
-    "nodes": [],
-    "edges": [],
-    "source_map": {},
-}
-
-
 def create_vault_structure(
     base_path: str,
     ontology_content: Optional[str] = None,
@@ -121,10 +118,6 @@ def create_vault_structure(
     _write_if_missing(wiki_vault / "AGENTS.md", agents_content or DEFAULT_AGENTS_MD)
     _write_if_missing(wiki_vault / "ontology.md", ontology_content or DEFAULT_ONTOLOGY_MD)
     _write_if_missing(wiki_vault / "index.md", DEFAULT_INDEX_MD)
-    _write_if_missing(
-        wiki_vault / "graph.json",
-        json.dumps(DEFAULT_GRAPH_JSON, indent=2),
-    )
 
     return {
         "clean_vault_path": normalize_path(str(clean_vault)),
@@ -157,7 +150,7 @@ def validate_vault_structure(base_path: str) -> List[str]:
     if not wiki_vault.exists():
         warnings.append("wiki-vault/ directory is missing")
     else:
-        for required in ["concepts", "staging", "AGENTS.md", "ontology.md", "index.md", "graph.json"]:
+        for required in ["concepts", "staging", "AGENTS.md", "ontology.md", "index.md"]:
             if not (wiki_vault / required).exists():
                 warnings.append(f"wiki-vault/{required} is missing")
 
@@ -168,3 +161,79 @@ def _write_if_missing(path: Path, content: str) -> None:
     """Write content to a file only if it doesn't exist."""
     if not path.exists():
         path.write_text(content, encoding="utf-8")
+
+
+# Map of structural file name → (default content, corruption signal)
+# Corruption signal: a string that appears in article frontmatter but NEVER
+# in a healthy structural file (e.g. "status: approved", "category: model").
+_STRUCTURAL_FILES: dict[str, tuple[str, str]] = {
+    "AGENTS.md":    (DEFAULT_AGENTS_MD,    "status:"),
+    "ontology.md":  (DEFAULT_ONTOLOGY_MD,  "status:"),
+    "index.md":     (DEFAULT_INDEX_MD,     "created_by:"),
+}
+
+
+def _looks_like_article(content: str, corruption_signal: str) -> bool:
+    """Return True if the file contains YAML frontmatter matching the signal.
+
+    Structural files (AGENTS.md, ontology.md, index.md) never contain article
+    frontmatter.  If the file starts with ``---`` and the signal appears inside
+    the first frontmatter block, we treat the file as corrupted.
+    """
+    if not content.startswith("---"):
+        return False
+    # Look for closing --- within the first 60 lines
+    lines = content.splitlines()
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            header = "\n".join(lines[1:i])
+            return corruption_signal in header
+    return False
+
+
+def repair_structural_files(wiki_vault_path: str) -> list[str]:
+    """Detect and repair corrupted structural wiki files.
+
+    For each of AGENTS.md, ontology.md, and index.md:
+    - If the file contains article YAML frontmatter (a corruption indicator),
+      the corrupted file is moved to ``staging/.meta/`` as a backup and the
+      default content is restored.
+
+    Returns a list of repaired file names (empty = nothing was wrong).
+    """
+    wiki_path = Path(wiki_vault_path)
+    backup_dir = wiki_path / "staging" / ".meta"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+
+    repaired: list[str] = []
+
+    for filename, (default_content, signal) in _STRUCTURAL_FILES.items():
+        file_path = wiki_path / filename
+        if not file_path.exists():
+            continue
+
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+
+        if not _looks_like_article(content, signal):
+            continue
+
+        # Back up the corrupted file before overwriting
+        ts = int(time.time())
+        backup_path = backup_dir / f"corrupted_{filename}_{ts}.md"
+        try:
+            backup_path.write_text(content, encoding="utf-8")
+            logger.warning(
+                "Structural file '%s' contained article content — backed up to %s and restored default",
+                filename,
+                backup_path,
+            )
+        except OSError as e:
+            logger.warning("Could not write backup for %s: %s", filename, e)
+
+        file_path.write_text(default_content, encoding="utf-8")
+        repaired.append(filename)
+
+    return repaired

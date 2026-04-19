@@ -8,6 +8,7 @@
 import { create } from "zustand";
 import { getFileContent, saveFileContent } from "@/api/sidecar";
 import { isWikiVaultPath } from "@/api/paths";
+import { suppressWatcherPath } from "@/api/fileWatcher";
 
 function readLocalBool(key: string, fallback: boolean): boolean {
   try {
@@ -46,6 +47,7 @@ interface EditorState {
   toggleGraph: () => void;
   setGraphVisible: (visible: boolean) => void;
   setSplitPercent: (pct: number) => void;
+  reset: () => void;
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -55,7 +57,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isLoading: false,
   isReadOnly: false,
   graphVisible: readLocalBool("vanilla:graphVisible", true),
-  graphSplitPercent: readLocalNumber("vanilla:graphSplit", 50),
+  graphSplitPercent: Math.min(80, Math.max(20, readLocalNumber("vanilla:graphSplit", 50))),
 
   openFile: async (path: string) => {
     const state = get();
@@ -90,6 +92,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     if (!isDirty || isReadOnly || !activeFilePath || fileContent === null) return;
 
     await saveFileContent(activeFilePath, fileContent);
+    suppressWatcherPath(activeFilePath);
     set({ isDirty: false });
   },
 
@@ -124,5 +127,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const clamped = Math.min(80, Math.max(20, pct));
     localStorage.setItem("vanilla:graphSplit", String(clamped));
     set({ graphSplitPercent: clamped });
+  },
+
+  reset: () => {
+    set({
+      activeFilePath: null,
+      fileContent: null,
+      isDirty: false,
+      isLoading: false,
+      isReadOnly: false,
+    });
   },
 }));

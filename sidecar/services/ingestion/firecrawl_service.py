@@ -1,11 +1,14 @@
 """
-Firecrawl URL ingestion service.
+Web scraping service — cascading scraper with multiple backends.
 
-Fetches web pages and converts them to clean markdown using Firecrawl.
-This is online-only — documented as the one feature that requires internet.
+Priority order:
+  1. Firecrawl   (if api_key provided) — best quality, paid, handles most sites
+  2. Crawl4AI    (if installed)        — Playwright-based, handles JS-heavy SPAs, free
+                                         Only available when running sidecar from raw Python;
+                                         not bundled in the PyInstaller binary due to Playwright size.
+  3. Jina Reader (always available)    — r.jina.ai proxy, free, no API key, handles JS via Jina's infra
 
-If Firecrawl is unavailable (no API key, offline, rate limited), the error
-is surfaced to the user via the ingest job status endpoint.
+All backends return (markdown_content, page_title).
 """
 
 import logging
@@ -15,140 +18,109 @@ import httpx
 
 logger = logging.getLogger("vanilla.ingestion.firecrawl")
 
-# Fallback: simple HTTP fetch + basic HTML stripping when Firecrawl unavailable
-SIMPLE_FALLBACK_ENABLED = True
-
 
 async def fetch_url(url: str, api_key: Optional[str] = None) -> Tuple[str, str]:
     """
     Fetch a URL and return (markdown_content, title).
 
-    Tries Firecrawl first, falls back to simple HTTP fetch if Firecrawl
-    is not installed or API key is missing.
-
-    Args:
-        url: The URL to fetch
-        api_key: Firecrawl API key (optional)
-
-    Returns:
-        Tuple of (markdown_content, page_title)
-
-    Raises:
-        ImportError: If firecrawl-py is not installed and fallback is disabled
-        RuntimeError: If fetch fails
+    Tries backends in priority order: Firecrawl → Crawl4AI → Jina Reader.
+    Raises RuntimeError only if all backends fail.
     """
-    # Try Firecrawl first
+    # 1. Firecrawl — highest quality for standard pages
     if api_key:
         try:
             return await _fetch_with_firecrawl(url, api_key)
         except ImportError:
-            logger.warning("firecrawl-py not installed, trying simple fallback")
+            logger.warning("firecrawl-py not installed, falling back")
         except Exception as e:
-            logger.warning("Firecrawl failed (%s), trying simple fallback", e)
+            logger.warning("Firecrawl failed (%s), trying next scraper", e)
 
-    # Fallback: simple HTTP fetch with basic content extraction
-    if SIMPLE_FALLBACK_ENABLED:
-        return await _fetch_simple(url)
+    # 2. Crawl4AI — Playwright-based, handles JS-heavy sites (dev/power-user only)
+    try:
+        return await _fetch_with_crawl4ai(url)
+    except ImportError:
+        pass  # Not installed — expected in production binary
+    except Exception as e:
+        logger.warning("Crawl4AI failed (%s), trying Jina Reader", e)
 
-    raise ImportError("firecrawl-py is not installed and simple fallback is disabled")
+    # 3. Jina Reader — reliable free fallback, handles most pages including JS
+    try:
+        return await _fetch_with_jina(url)
+    except Exception as e:
+        logger.warning("Jina Reader failed (%s)", e)
+
+    raise RuntimeError(
+        f"All scrapers failed for: {url}. "
+        "Configure a Firecrawl API key in Settings for more reliable scraping."
+    )
 
 
 async def _fetch_with_firecrawl(url: str, api_key: str) -> Tuple[str, str]:
-    """Fetch using the Firecrawl API."""
+    """Fetch using the Firecrawl API (firecrawl-py package)."""
     from firecrawl import FirecrawlApp
 
+    logger.info("Fetching with Firecrawl: %s", url)
     app = FirecrawlApp(api_key=api_key)
-
-    logger.info("Fetching URL with Firecrawl: %s", url)
     result = app.scrape_url(url, params={"formats": ["markdown"]})
 
     markdown = result.get("markdown", "")
     metadata = result.get("metadata", {})
-    title = metadata.get("title", "") or metadata.get("og:title", "") or url
+    title = metadata.get("title") or metadata.get("og:title") or url
 
     return markdown, title
 
 
-async def _fetch_simple(url: str) -> Tuple[str, str]:
+async def _fetch_with_crawl4ai(url: str) -> Tuple[str, str]:
     """
-    Simple HTTP fetch fallback — fetches HTML and does basic conversion.
+    Fetch via Crawl4AI — Playwright-based, handles complex JS/SPAs.
 
-    This is much lower quality than Firecrawl but works offline
-    (for locally-hosted URLs) and without an API key.
+    Raises ImportError if crawl4ai is not installed (expected in production binary).
+    Install with: pip install crawl4ai && playwright install chromium
     """
-    logger.info("Fetching URL with simple fallback: %s", url)
+    from crawl4ai import AsyncWebCrawler
+
+    logger.info("Fetching with Crawl4AI: %s", url)
+    async with AsyncWebCrawler(verbose=False) as crawler:
+        result = await crawler.arun(url=url)
+
+    if not result.success:
+        raise RuntimeError(f"Crawl4AI: {result.error_message}")
+
+    content = result.markdown or ""
+    title = url
+    if result.metadata:
+        title = result.metadata.get("title", url)
+
+    return content, title
+
+
+async def _fetch_with_jina(url: str) -> Tuple[str, str]:
+    """
+    Fetch via Jina Reader (r.jina.ai) — free, no API key required.
+
+    Jina renders pages server-side and returns clean markdown.
+    Works on most sites including JS-rendered pages. Rate limit: ~20 req/min on free tier.
+    """
+    jina_url = f"https://r.jina.ai/{url}"
+    logger.info("Fetching with Jina Reader: %s", url)
 
     async with httpx.AsyncClient(
-        timeout=30.0,
+        timeout=60.0,
         follow_redirects=True,
-        headers={"User-Agent": "Vanilla/0.1 (Knowledge Base)"},
+        headers={
+            "Accept": "text/markdown, text/plain, */*",
+            "User-Agent": "Vanilla/0.1 (Knowledge Base)",
+        },
     ) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        html = response.text
+        resp = await client.get(jina_url)
+        resp.raise_for_status()
+        content = resp.text
 
-    # Extract title from <title> tag
-    title = _extract_html_title(html) or url
+    # Jina prepends metadata lines: "Title: ...\nURL: ...\nPublished: ...\n---\n"
+    title = url
+    for line in content.splitlines()[:8]:
+        if line.lower().startswith("title:"):
+            title = line[6:].strip()
+            break
 
-    # Basic HTML to text conversion (strips tags, keeps structure)
-    text = _html_to_basic_markdown(html)
-
-    return text, title
-
-
-def _extract_html_title(html: str) -> str:
-    """Extract <title> content from HTML."""
-    import re
-    match = re.search(r'<title[^>]*>(.*?)</title>', html, re.IGNORECASE | re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return ""
-
-
-def _html_to_basic_markdown(html: str) -> str:
-    """
-    Very basic HTML to markdown conversion.
-
-    This is intentionally simple — Firecrawl is the proper solution.
-    This fallback just strips HTML tags and preserves some structure.
-    """
-    import re
-
-    # Remove script and style blocks
-    text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
-
-    # Convert headings
-    for i in range(1, 7):
-        text = re.sub(
-            rf'<h{i}[^>]*>(.*?)</h{i}>',
-            lambda m, level=i: f'\n{"#" * level} {m.group(1).strip()}\n',
-            text, flags=re.DOTALL | re.IGNORECASE,
-        )
-
-    # Convert paragraphs and line breaks
-    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
-    text = re.sub(r'<p[^>]*>(.*?)</p>', r'\n\1\n', text, flags=re.DOTALL | re.IGNORECASE)
-
-    # Convert links
-    text = re.sub(r'<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>', r'[\2](\1)', text, flags=re.DOTALL | re.IGNORECASE)
-
-    # Convert bold and italic
-    text = re.sub(r'<(?:b|strong)[^>]*>(.*?)</(?:b|strong)>', r'**\1**', text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r'<(?:i|em)[^>]*>(.*?)</(?:i|em)>', r'*\1*', text, flags=re.DOTALL | re.IGNORECASE)
-
-    # Convert list items
-    text = re.sub(r'<li[^>]*>(.*?)</li>', r'- \1', text, flags=re.DOTALL | re.IGNORECASE)
-
-    # Strip remaining HTML tags
-    text = re.sub(r'<[^>]+>', '', text)
-
-    # Clean up whitespace
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    text = re.sub(r'[ \t]+', ' ', text)
-
-    # Decode HTML entities
-    import html
-    text = html.unescape(text)
-
-    return text.strip()
+    return content, title

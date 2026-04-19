@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:*; img-src 'self' data: blob:; font-src 'self' data:"
     }
   },
   "bundle": {
@@ -46,14 +46,10 @@
   },
   "plugins": {
     "updater": {
+      "active": false,
       "pubkey": "",
-      "endpoints": [
-        "https://github.com/YOUR_GITHUB_USERNAME/vanilladb/releases/latest/download/latest.json"
-      ],
-      "dialog": true,
-      "windows": {
-        "installMode": "passive"
-      }
+      "endpoints": [],
+      "dialog": false
     }
   }
 }

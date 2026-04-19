@@ -2,7 +2,7 @@
  * FileTree — recursive file browser for the left sidebar.
  */
 
-import { useEffect, useState, useCallback, memo } from "react";
+import { useEffect, useRef, useState, useCallback, memo } from "react";
 import { getVaultFiles, type FileTreeNode } from "@/api/sidecar";
 import { useEditorStore } from "@/stores/editorStore";
 
@@ -126,12 +126,21 @@ export const FileTree = memo(function FileTree() {
   const activePath = useEditorStore((s) => s.activeFilePath);
   const openFile = useEditorStore((s) => s.openFile);
 
+  const lastTreeHash = useRef<string | null>(null);
+  const failCount = useRef(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const refresh = useCallback(async () => {
     try {
       const data = await getVaultFiles();
-      setTree(data.tree);
+      failCount.current = 0;
+      if (data.tree_hash !== lastTreeHash.current) {
+        lastTreeHash.current = data.tree_hash ?? null;
+        setTree(data.tree);
+      }
     } catch {
-      // sidecar unavailable — keep existing tree
+      failCount.current++;
+      // sidecar unavailable — keep existing tree; backoff handled below
     } finally {
       setLoading(false);
     }
@@ -139,8 +148,21 @@ export const FileTree = memo(function FileTree() {
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refresh, 15_000);
-    return () => clearInterval(id);
+
+    function schedule() {
+      // Exponential backoff on failures: 30s * 2^failCount, capped at 120s
+      const delay = failCount.current > 0
+        ? Math.min(120_000, 30_000 * Math.pow(2, failCount.current - 1))
+        : 30_000;
+      intervalRef.current = setTimeout(() => {
+        refresh().then(schedule);
+      }, delay);
+    }
+
+    schedule();
+    return () => {
+      if (intervalRef.current) clearTimeout(intervalRef.current);
+    };
   }, [refresh]);
 
   if (loading) return <TreeSkeleton />;
