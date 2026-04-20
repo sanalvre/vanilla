@@ -246,7 +246,7 @@ def _default_model(provider: str) -> str:
     """Fallback model name when none is specified."""
     defaults = {
         "openai": "gpt-4o-mini",
-        "anthropic": "claude-sonnet-4-20250514",
+        "anthropic": "claude-haiku-4-5",
         "openrouter": "openai/gpt-4o-mini",
         "ollama": "llama3",
     }
