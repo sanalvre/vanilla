@@ -2,6 +2,7 @@
 Web scraping service — cascading scraper with multiple backends.
 
 Priority order:
+  0. GitHub API   (auto-detected) — free, no key, fetches README + repo metadata directly
   1. Firecrawl   (if api_key provided) — best quality, paid, handles most sites
   2. Crawl4AI    (if installed)        — Playwright-based, handles JS-heavy SPAs, free
                                          Only available when running sidecar from raw Python;
@@ -11,21 +12,43 @@ Priority order:
 All backends return (markdown_content, page_title).
 """
 
+import base64
 import logging
+import re
 from typing import Optional, Tuple
+from urllib.parse import urlparse
 
 import httpx
 
 logger = logging.getLogger("vanilla.ingestion.firecrawl")
+
+# Matches: github.com/{owner}/{repo}[/blob/{branch}/{path}][/tree/{branch}/{path}]
+_GITHUB_RE = re.compile(
+    r"github\.com/(?P<owner>[^/]+)/(?P<repo>[^/?#]+)"
+    r"(?:/(?P<kind>blob|tree)/(?P<branch>[^/]+)/(?P<path>.+))?",
+    re.IGNORECASE,
+)
+
+
+def _is_github_url(url: str) -> bool:
+    return bool(_GITHUB_RE.search(url))
 
 
 async def fetch_url(url: str, api_key: Optional[str] = None) -> Tuple[str, str]:
     """
     Fetch a URL and return (markdown_content, title).
 
-    Tries backends in priority order: Firecrawl → Crawl4AI → Jina Reader.
+    Tries backends in priority order:
+      GitHub API → Firecrawl → Crawl4AI → Jina Reader.
     Raises RuntimeError only if all backends fail.
     """
+    # 0. GitHub API — free, rich content for any public repo/file URL
+    if _is_github_url(url):
+        try:
+            return await _fetch_github(url)
+        except Exception as e:
+            logger.warning("GitHub fetch failed (%s), falling back to general scrapers", e)
+
     # 1. Firecrawl — highest quality for standard pages
     if api_key:
         try:
@@ -53,6 +76,113 @@ async def fetch_url(url: str, api_key: Optional[str] = None) -> Tuple[str, str]:
         f"All scrapers failed for: {url}. "
         "Configure a Firecrawl API key in Settings for more reliable scraping."
     )
+
+
+async def _fetch_github(url: str) -> Tuple[str, str]:
+    """
+    Fetch a GitHub repo or file URL using the public GitHub API — no auth required
+    for public repos.
+
+    Handles:
+      github.com/{owner}/{repo}                        → README + repo metadata
+      github.com/{owner}/{repo}/blob/{branch}/{file}  → raw file content
+      github.com/{owner}/{repo}/tree/{branch}/{path}  → directory README
+    """
+    m = _GITHUB_RE.search(url)
+    if not m:
+        raise ValueError(f"Not a recognisable GitHub URL: {url}")
+
+    owner = m.group("owner")
+    repo = m.group("repo").rstrip("/")
+    kind = m.group("kind")   # "blob" | "tree" | None
+    branch = m.group("branch")
+    path = m.group("path")
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "VanillaDB/0.1",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True, headers=headers) as client:
+
+        # ── Specific file (blob) ──────────────────────────────────────
+        if kind == "blob" and path:
+            raw_url = f"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}"
+            resp = await client.get(raw_url)
+            resp.raise_for_status()
+            content = resp.text
+
+            # Wrap non-markdown files in a fenced code block
+            suffix = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+            if suffix and suffix != "md":
+                lang = suffix
+                content = f"```{lang}\n{content}\n```"
+
+            title = f"{owner}/{repo}: {path}"
+            return f"# {title}\n\n> Source: {url}\n\n{content}", title
+
+        # ── Repo root or directory ────────────────────────────────────
+        # 1. Fetch repo metadata
+        repo_resp = await client.get(f"https://api.github.com/repos/{owner}/{repo}")
+        repo_resp.raise_for_status()
+        meta = repo_resp.json()
+
+        title = meta.get("full_name", f"{owner}/{repo}")
+        description = meta.get("description") or ""
+        stars = meta.get("stargazers_count", 0)
+        language = meta.get("language") or "Unknown"
+        topics = meta.get("topics", [])
+        homepage = meta.get("homepage") or ""
+        default_branch = meta.get("default_branch", "main")
+
+        # 2. Fetch README (use provided branch or default)
+        readme_branch = branch or default_branch
+        readme_path = f"{path}/README.md" if (kind == "tree" and path) else None
+
+        readme_content = ""
+        # Try explicit sub-path first, fall back to repo-root README endpoint
+        if readme_path:
+            try:
+                raw = await client.get(
+                    f"https://raw.githubusercontent.com/{owner}/{repo}/{readme_branch}/{readme_path}"
+                )
+                if raw.status_code == 200:
+                    readme_content = raw.text
+            except Exception:
+                pass
+
+        if not readme_content:
+            try:
+                readme_resp = await client.get(
+                    f"https://api.github.com/repos/{owner}/{repo}/readme",
+                    params={"ref": readme_branch},
+                )
+                if readme_resp.status_code == 200:
+                    data = readme_resp.json()
+                    readme_content = base64.b64decode(data["content"]).decode("utf-8", errors="replace")
+            except Exception:
+                pass
+
+        # 3. Build rich markdown document
+        parts = [f"# {title}"]
+        if description:
+            parts.append(f"\n{description}\n")
+
+        meta_lines = [f"- **Language:** {language}", f"- **Stars:** {stars:,}"]
+        if homepage:
+            meta_lines.append(f"- **Homepage:** {homepage}")
+        if topics:
+            meta_lines.append(f"- **Topics:** {', '.join(topics)}")
+        meta_lines.append(f"- **URL:** {url}")
+        parts.append("\n".join(meta_lines))
+
+        if readme_content:
+            parts.append(f"\n## README\n\n{readme_content}")
+        else:
+            parts.append("\n*No README found.*")
+
+        return "\n\n".join(parts), title
 
 
 async def _fetch_with_firecrawl(url: str, api_key: str) -> Tuple[str, str]:
