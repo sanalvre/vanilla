@@ -15,7 +15,7 @@ __pycache__/
 dist/
 build/
 *.spec
-!sidecar/vanilla.spec
+!sidecar/vanilla-sidecar.spec
 .eggs/
 .venv/
 venv/

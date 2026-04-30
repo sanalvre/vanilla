@@ -115,5 +115,30 @@ export function useCodemirror({ content, readOnly, onChange }: UseCodemirrorOpti
     });
   }, [content]);
 
+  // Insert voice-transcribed text at the current cursor position
+  useEffect(() => {
+    function handleVoiceTranscript(e: Event) {
+      const view = viewRef.current;
+      if (!view) return;
+      const transcript = (e as CustomEvent<{ transcript: string }>).detail
+        ?.transcript;
+      if (!transcript) return;
+
+      const cursor = view.state.selection.main.head;
+      view.dispatch({
+        changes: { from: cursor, insert: transcript },
+        selection: { anchor: cursor + transcript.length },
+      });
+      view.focus();
+    }
+
+    window.addEventListener("vanilla:voice-transcript", handleVoiceTranscript);
+    return () =>
+      window.removeEventListener(
+        "vanilla:voice-transcript",
+        handleVoiceTranscript,
+      );
+  }, []); // viewRef is a stable ref — no deps needed
+
   return { setContainer };
 }

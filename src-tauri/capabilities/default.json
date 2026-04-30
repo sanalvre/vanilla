@@ -15,6 +15,13 @@
     "fs:allow-mkdir",
     "fs:allow-watch",
     "dialog:allow-open",
-    "dialog:allow-save"
+    "dialog:allow-save",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-is-registered",
+    "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
+    "updater:allow-check",
+    "updater:allow-download-and-install"
   ]
 }

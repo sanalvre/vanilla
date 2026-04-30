@@ -29,7 +29,13 @@ ingestion = [
     "marker-pdf>=0.3",
     "pymupdf>=1.24",
     "firecrawl-py>=1.0",
-    "crawl4ai>=0.4.0",   # optional: JS-heavy scraping; also run: playwright install chromium
+    "crawl4ai>=0.4.0",   # optional: JS-heavy scraping
+    "playwright>=1.44.0",  # optional: JS-heavy research; run: playwright install chromium
+]
+voice = [
+    "faster-whisper>=1.0.0",
+    "sounddevice>=0.4.6",
+    "numpy>=1.24",
 ]
 mcp = [
     "fastmcp>=0.4",

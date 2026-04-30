@@ -7,8 +7,153 @@
 import { useState, useEffect, useCallback } from "react";
 import { getLLMConfig, validateLLM, type LLMConfig } from "@/api/sidecar";
 import { SyncPanel } from "./SyncPanel";
+import { invoke } from "@tauri-apps/api/core";
 
-type Tab = "llm" | "sync";
+type Tab = "llm" | "sync" | "updates";
+
+interface UpdateInfo {
+  available: boolean;
+  version?: string;
+  current_version?: string;
+  notes?: string;
+}
+
+function UpdatesPanel() {
+  const [checkState, setCheckState] = useState<"idle" | "checking" | "done" | "error">("idle");
+  const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [installing, setInstalling] = useState(false);
+
+  const checkForUpdates = useCallback(async () => {
+    setCheckState("checking");
+    setErrorMsg("");
+    setUpdate(null);
+    try {
+      const result = await invoke<UpdateInfo>("check_for_update");
+      setUpdate(result);
+      setCheckState("done");
+    } catch (e) {
+      setErrorMsg(String(e));
+      setCheckState("error");
+    }
+  }, []);
+
+  const doInstall = useCallback(async () => {
+    setInstalling(true);
+    try {
+      await invoke("install_update");
+      // App will relaunch — show a message in case relaunch is delayed
+    } catch (e) {
+      setErrorMsg(String(e));
+      setInstalling(false);
+    }
+  }, []);
+
+  return (
+    <div className="space-y-5">
+      {/* Current version */}
+      <div className="flex items-center justify-between rounded-lg border border-stone-100 bg-stone-50 px-3 py-2.5 dark:border-zinc-800 dark:bg-zinc-800/50">
+        <span className="text-xs text-stone-500 dark:text-zinc-400">Current version</span>
+        <span className="font-mono text-xs font-medium text-stone-700 dark:text-zinc-200">0.1.0</span>
+      </div>
+
+      {/* Check button */}
+      <button
+        onClick={checkForUpdates}
+        disabled={checkState === "checking" || installing}
+        className="flex w-full items-center justify-center gap-2 rounded-lg bg-stone-800
+                   px-4 py-2.5 text-xs font-medium text-white transition-colors
+                   hover:bg-stone-700 disabled:cursor-not-allowed disabled:opacity-60
+                   dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-100"
+      >
+        {checkState === "checking" ? (
+          <>
+            <div className="h-3 w-3 animate-spin rounded-full border border-white/30 border-t-white dark:border-zinc-600/30 dark:border-t-zinc-900" />
+            Checking...
+          </>
+        ) : (
+          "Check for Updates"
+        )}
+      </button>
+
+      {/* Result: up to date */}
+      {checkState === "done" && update && !update.available && (
+        <div className="flex items-center gap-2 rounded-lg bg-green-50 px-3 py-2.5 text-xs text-green-700 dark:bg-green-950/30 dark:text-green-400">
+          <div className="h-1.5 w-1.5 rounded-full bg-green-500" />
+          You're on the latest version
+        </div>
+      )}
+
+      {/* Result: update available */}
+      {checkState === "done" && update?.available && (
+        <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800/50 dark:bg-amber-950/20">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+              Update available
+            </span>
+            <span className="font-mono text-xs text-amber-700 dark:text-amber-400">
+              v{update.version}
+            </span>
+          </div>
+          {update.notes && (
+            <p className="text-[11px] leading-relaxed text-amber-700 dark:text-amber-400 whitespace-pre-wrap">
+              {update.notes}
+            </p>
+          )}
+          <button
+            onClick={doInstall}
+            disabled={installing}
+            className="flex w-full items-center justify-center gap-2 rounded-lg bg-amber-600
+                       px-4 py-2 text-xs font-medium text-white transition-colors
+                       hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {installing ? (
+              <>
+                <div className="h-3 w-3 animate-spin rounded-full border border-white/30 border-t-white" />
+                Downloading & installing...
+              </>
+            ) : (
+              "Download & Install"
+            )}
+          </button>
+          {installing && (
+            <p className="text-center text-[11px] text-amber-600 dark:text-amber-400">
+              The app will restart automatically after installation.
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Error */}
+      {checkState === "error" && (
+        <div className="rounded-lg bg-red-50 px-3 py-2.5 dark:bg-red-950/20">
+          <p className="text-[11px] text-red-600 dark:text-red-400">
+            {errorMsg.includes("PLACEHOLDER") || errorMsg.includes("pubkey")
+              ? "Updater not configured — see setup instructions below."
+              : errorMsg}
+          </p>
+        </div>
+      )}
+
+      {/* Setup instructions */}
+      <div className="space-y-2 rounded-lg border border-stone-100 bg-stone-50 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-800/30">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-stone-400 dark:text-zinc-500">
+          First-time setup
+        </p>
+        <ol className="space-y-1.5 text-[11px] leading-relaxed text-stone-500 dark:text-zinc-500">
+          <li>1. Generate a signing keypair:<br />
+            <code className="mt-0.5 block rounded bg-stone-100 px-2 py-0.5 font-mono text-[10px] dark:bg-zinc-700">
+              npm run tauri -- signer generate -w ~/.tauri/vanilla.key
+            </code>
+          </li>
+          <li>2. Copy the printed public key into <code className="font-mono">src-tauri/tauri.conf.json</code> → <code className="font-mono">plugins.updater.pubkey</code></li>
+          <li>3. Add <code className="font-mono">TAURI_SIGNING_PRIVATE_KEY</code> + <code className="font-mono">TAURI_SIGNING_PRIVATE_KEY_PASSWORD</code> to your GitHub repo secrets</li>
+          <li>4. Push a version tag (<code className="font-mono">git tag v0.2.0 && git push --tags</code>) to trigger a signed release</li>
+        </ol>
+      </div>
+    </div>
+  );
+}
 
 const PROVIDERS = [
   {
@@ -161,7 +306,7 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
           </div>
           {/* Tab bar */}
           <div className="flex gap-0">
-            {(["llm", "sync"] as Tab[]).map((t) => (
+            {(["llm", "sync", "updates"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -171,13 +316,16 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
                     : "border-transparent text-stone-400 hover:text-stone-600 dark:text-zinc-500 dark:hover:text-zinc-300"
                 }`}
               >
-                {t === "llm" ? "LLM" : "Sync"}
+                {t === "llm" ? "LLM" : t === "updates" ? "Updates" : "Sync"}
               </button>
             ))}
           </div>
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+          {/* ── Updates tab ──────────────────────────── */}
+          {tab === "updates" && <UpdatesPanel />}
+
           {/* ── Sync tab ─────────────────────────────── */}
           {tab === "sync" && <SyncPanel />}
 
@@ -381,7 +529,9 @@ export function SettingsPanel({ onClose }: SettingsPanelProps) {
         <div className="border-t border-stone-100 px-4 py-3 text-[11px] text-stone-400 dark:border-zinc-800 dark:text-zinc-600">
           {tab === "llm"
             ? "Keys are stored locally in your vault config file only."
-            : "Sync uses git — your vault history is preserved across all changes."}
+            : tab === "sync"
+            ? "Sync uses git — your vault history is preserved across all changes."
+            : "Updates are signed and verified before installation."}
         </div>
       </aside>
     </>

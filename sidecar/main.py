@@ -21,6 +21,7 @@ from typing import Optional
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from config import VanillaConfig
 from db.database import init_db, get_db_path
@@ -57,6 +58,7 @@ from services.graph_service import (
     get_articles_citing,
     get_hub_summary,
     upsert_hub_summary,
+    get_source_map,
 )
 from services.watcher_bridge import WatcherBridge, FileEvent
 from services.paths import normalize_path
@@ -470,7 +472,8 @@ async def wiki_graph():
     """Return the current knowledge graph for Reagraph visualization."""
     nodes = get_all_nodes()
     edges = get_all_edges()
-    return {"nodes": nodes, "edges": edges}
+    source_map = get_source_map()
+    return {"nodes": nodes, "edges": edges, "source_map": source_map}
 
 
 @app.get("/wiki/stale")
@@ -787,9 +790,7 @@ async def get_graph_concept(node_id: str):
     """
     from pathlib import Path
 
-    if not config.wiki_vault_path:
-        raise HTTPException(status_code=400, detail="Wiki vault not configured")
-
+    # Node existence check runs regardless of vault config
     node = get_node(node_id)
     if not node:
         raise HTTPException(status_code=404, detail="Concept not found")
@@ -805,15 +806,17 @@ async def get_graph_concept(node_id: str):
         for n in neighbors
     ]
 
+    # Article content requires vault to be configured
     content: str | None = None
-    article_path = Path(config.wiki_vault_path) / "concepts" / f"{node_id}.md"
-    if article_path.exists():
-        raw = article_path.read_text(encoding="utf-8")
-        if raw.startswith("---"):
-            end = raw.find("---", 3)
-            content = raw[end + 3:].strip() if end != -1 else raw
-        else:
-            content = raw
+    if config.wiki_vault_path:
+        article_path = Path(config.wiki_vault_path) / "concepts" / f"{node_id}.md"
+        if article_path.exists():
+            raw = article_path.read_text(encoding="utf-8")
+            if raw.startswith("---"):
+                end = raw.find("---", 3)
+                content = raw[end + 3:].strip() if end != -1 else raw
+            else:
+                content = raw
 
     hub_summary = get_hub_summary(node_id)
 
@@ -1043,6 +1046,327 @@ async def sync_pull():
         files_changed=result["files_changed"],
         error=result["error"],
     )
+
+
+# ─── Clipboard Clip Endpoint ────────────────────────────────────────
+
+class ClipRequest(BaseModel):
+    text: str
+    title: str = ""
+
+
+@app.post("/ingest/clip")
+async def ingest_clip(request: ClipRequest):
+    """
+    Write clipboard text directly to clean-vault/raw/clips/{timestamp}.md
+    and immediately trigger the agent pipeline (bypasses debounce).
+    """
+    if not config.clean_vault_path:
+        raise HTTPException(status_code=400, detail="Vault not initialized")
+
+    import time as _time
+    from pathlib import Path as _Path
+
+    clips_dir = _Path(config.clean_vault_path) / "raw" / "clips"
+    clips_dir.mkdir(parents=True, exist_ok=True)
+
+    ts = int(_time.time())
+    ts_us = int(_time.time() * 1_000_000)  # microseconds for uniqueness
+    filename = f"clip-{ts_us}.md"
+    dest = clips_dir / filename
+
+    title = request.title.strip() or f"Clip {ts}"
+    content = f"---\ntitle: {title}\nsource: clipboard\ncreated_at: {ts}\n---\n\n{request.text}\n"
+
+    try:
+        dest.write_text(content, encoding="utf-8")
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    vault_rel = normalize_path(f"clean-vault/raw/clips/{filename}")
+    job = ingest_queue.create_job(source_type="clip", source_path=vault_rel)
+    ingest_queue.update_job(job.job_id, status=JobStatus.COMPLETE, progress=1.0, output_path=vault_rel)
+
+    # Trigger pipeline immediately (no debounce)
+    if config.initialized:
+        asyncio.create_task(_run_pipeline_locked([vault_rel], config))
+
+    return {"job_id": job.job_id, "path": vault_rel}
+
+
+# ─── Voice Endpoints ────────────────────────────────────────────────
+
+class VoiceRecordRequest(BaseModel):
+    duration_s: float = 5.0
+    model_size: str = "base"
+
+
+@app.post("/voice/record")
+async def voice_record(request: VoiceRecordRequest):
+    """
+    Record audio for duration_s seconds and return the transcript.
+    Requires faster-whisper + sounddevice installed.
+    """
+    try:
+        from services.voice_service import record_and_transcribe
+
+        transcript, duration_ms = await record_and_transcribe(
+            duration_s=request.duration_s,
+            model_size=request.model_size,
+        )
+        return {"transcript": transcript, "duration_ms": duration_ms}
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Voice dependencies not installed: {e}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class VoiceStartRequest(BaseModel):
+    model_size: str = "base"
+
+
+@app.post("/voice/start")
+async def voice_start(request: VoiceStartRequest):
+    """
+    Begin recording from the microphone immediately (hold-to-talk / button-toggle).
+    Returns immediately — audio is captured in the background.
+    Call POST /voice/stop to finalise and get the transcript.
+    """
+    try:
+        from services.voice_service import start_recording
+
+        start_recording(model_size=request.model_size)
+        return {"status": "recording", "model_size": request.model_size}
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Voice dependencies not installed: {e}",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/voice/stop")
+async def voice_stop():
+    """
+    Stop the active recording and transcribe the captured audio.
+    Returns {"transcript": "...", "duration_ms": N}.
+    Must be called after POST /voice/start.
+    """
+    try:
+        from services.voice_service import stop_recording_and_transcribe
+
+        transcript, duration_ms = await stop_recording_and_transcribe()
+        return {"transcript": transcript, "duration_ms": duration_ms}
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Voice dependencies not installed: {e}",
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/voice/models")
+async def voice_models():
+    """Return available Whisper model sizes and download status."""
+    try:
+        from services.voice_service import list_available_models
+
+        return {"models": list_available_models()}
+    except ImportError as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Voice dependencies not installed: {e}",
+        )
+
+
+# ─── Research Endpoints ─────────────────────────────────────────────
+
+class ResearchTopicRequest(BaseModel):
+    topic: str
+    max_pages: int = 5
+    follow_citations: bool = True
+
+
+class ResearchUrlRequest(BaseModel):
+    url: str
+
+
+async def _run_research_job(
+    job_id: str,
+    coro,
+) -> None:
+    """Run a research coroutine inside the ingest job queue, then trigger pipeline."""
+    from services.ingestion.job_queue import JobStatus
+
+    ingest_queue.update_job(job_id, status=JobStatus.PROCESSING, progress=0.1)
+    try:
+        result = await coro
+        ingest_queue.update_job(
+            job_id,
+            status=JobStatus.COMPLETE,
+            progress=1.0,
+            output_path=result.output_paths[0] if result.output_paths else None,
+        )
+        # Trigger pipeline for each written file
+        if result.output_paths and config.initialized:
+            asyncio.create_task(
+                _run_pipeline_locked(result.output_paths, config)
+            )
+        if result.errors:
+            logger.warning("Research job %s had errors: %s", job_id, result.errors)
+    except Exception as exc:
+        logger.error("Research job %s failed: %s", job_id, exc)
+        ingest_queue.update_job(job_id, status=JobStatus.ERROR, error=str(exc))
+
+
+@app.post("/research/topic")
+async def research_topic_endpoint(request: ResearchTopicRequest):
+    """
+    Start a supervised research job for a topic.
+    Returns a job_id immediately; research runs in the background.
+    Progress visible via GET /ingest/status/{job_id}.
+    """
+    if not config.clean_vault_path:
+        raise HTTPException(status_code=400, detail="Vault not initialized")
+
+    from services.browser_research import research_topic as _research_topic
+
+    job = ingest_queue.create_job(source_type="research", source_url=request.topic)
+
+    async def _run():
+        coro = _research_topic(
+            topic=request.topic,
+            config=config,
+            max_pages=request.max_pages,
+            follow_citations=request.follow_citations,
+        )
+        await _run_research_job(job.job_id, coro)
+
+    asyncio.create_task(_run())
+    return {"job_id": job.job_id, "status": "pending"}
+
+
+@app.post("/research/url")
+async def research_url_endpoint(request: ResearchUrlRequest):
+    """
+    Start a supervised research job for a single URL.
+    Returns a job_id immediately; fetching runs in the background.
+    """
+    if not config.clean_vault_path:
+        raise HTTPException(status_code=400, detail="Vault not initialized")
+
+    from services.browser_research import research_url as _research_url
+
+    job = ingest_queue.create_job(source_type="research", source_url=request.url)
+
+    async def _run():
+        coro = _research_url(url=request.url, config=config)
+        await _run_research_job(job.job_id, coro)
+
+    asyncio.create_task(_run())
+    return {"job_id": job.job_id, "status": "pending"}
+
+
+# ─── Exec Endpoints ─────────────────────────────────────────────────
+
+@app.get("/exec/pending")
+async def exec_pending():
+    """List all pending code execution runs."""
+    runs = repo.get_pending_exec_runs()
+    return {"runs": runs}
+
+
+@app.get("/exec/{run_id}")
+async def exec_get(run_id: str):
+    """Get a single exec run by ID."""
+    run = repo.get_exec_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Exec run not found")
+    return run
+
+
+@app.post("/exec/{run_id}/approve")
+async def exec_approve(run_id: str):
+    """
+    Approve and execute a code run. Appends output to the article.
+    Returns the exec result.
+    """
+    run = repo.get_exec_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Exec run not found")
+
+    if run["status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"Run is not pending (status: {run['status']})")
+
+    from services.code_executor import execute_python, execute_shell
+    from pathlib import Path as _Path
+    import time as _time
+
+    vault_root = ""
+    if config.wiki_vault_path:
+        vault_root = str(_Path(config.wiki_vault_path).parent)
+
+    lang = run["lang"]
+    code = run["code"]
+
+    if lang not in ("python", "py", "bash", "sh", "shell"):
+        raise HTTPException(status_code=400, detail=f"Unsupported language: {lang}")
+
+    try:
+        if lang in ("python", "py"):
+            result = await execute_python(code, timeout_s=30, vault_root=vault_root)
+        else:
+            result = await execute_shell(code, timeout_s=10, vault_root=vault_root)
+    except Exception as exc:
+        repo.update_exec_run(run_id, "error", stderr=str(exc), exit_code=-1)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    status = "complete" if result.success else "error"
+    repo.update_exec_run(
+        run_id,
+        status=status,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        exit_code=result.exit_code,
+    )
+
+    # Append output to the article in wiki-vault/concepts/
+    if config.wiki_vault_path and run.get("article_path"):
+        article_file = _Path(config.wiki_vault_path) / "concepts" / _Path(run["article_path"]).name
+        if article_file.exists():
+            ts = _time.strftime("%Y-%m-%d %H:%M", _time.localtime())
+            output_block = f"\n\n**Output** (run {ts}):\n```\n{result.stdout or result.stderr or '(no output)'}\n```\n"
+            try:
+                existing = article_file.read_text(encoding="utf-8")
+                article_file.write_text(existing + output_block, encoding="utf-8")
+            except OSError as e:
+                logger.warning("Could not append exec output to %s: %s", article_file, e)
+
+    return {
+        "run_id": run_id,
+        "status": status,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "exit_code": result.exit_code,
+        "runtime_ms": result.runtime_ms,
+    }
+
+
+@app.post("/exec/{run_id}/reject")
+async def exec_reject(run_id: str):
+    """Reject (skip) a code execution run."""
+    run = repo.get_exec_run(run_id)
+    if not run:
+        raise HTTPException(status_code=404, detail="Exec run not found")
+    repo.update_exec_run(run_id, "rejected")
+    return {"run_id": run_id, "status": "rejected"}
 
 
 # ─── Entry Point ────────────────────────────────────────────────────

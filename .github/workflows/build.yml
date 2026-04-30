@@ -109,6 +109,6 @@ jobs:
           releaseName: "VanillaDB ${{ github.ref_name }}"
           releaseBody: |
             See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}

@@ -24,10 +24,16 @@ from services.graph_service import (
     get_node_neighbors,
 )
 from services.embedding_service import generate_embedding
-from services.ingestion.normalizer import slugify
+from services.ingestion.normalizer import slugify as _normalizer_slugify
 from services.paths import normalize_path
 
 logger = logging.getLogger("vanilla.pipeline")
+
+
+def _slugify(text: str) -> str:
+    """Slug for article filenames — falls back to 'untitled' for empty input."""
+    slug = _normalizer_slugify(text)
+    return slug if slug else "untitled"
 
 
 class AgentPipelineStatus:
@@ -606,7 +612,7 @@ async def proposal_step(
         action_type = action.get("action", "create")
 
         # D4: Slug collision detection within this batch
-        slug = slugify(concept)
+        slug = _slugify(concept)
         if slug in used_slugs and used_slugs[slug] != concept:
             original_slug = slug
             suffix = 2

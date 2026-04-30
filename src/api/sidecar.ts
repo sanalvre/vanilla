@@ -37,6 +37,7 @@ export async function getStatus(): Promise<{
   current_phase: string | null;
   last_run: { id: string; completed_at: number; tokens_used: number } | null;
   pending_proposals: number;
+  last_run_warnings: Array<{ code: string; detail?: string; path?: string }>;
 }> {
   const res = await fetch(`${baseUrl()}/status`);
   return res.json();

@@ -11,6 +11,7 @@ import { useEffect, useState, useCallback } from "react";
 import { getProposals } from "@/api/sidecar";
 import { useStatusStore } from "@/stores/statusStore";
 import { ProposalBatch } from "./ProposalBatch";
+import { ExecApproval } from "./ExecApproval";
 
 interface ProposalPanelProps {
   onClose: () => void;
@@ -121,6 +122,9 @@ export function ProposalPanel({ onClose }: ProposalPanelProps) {
           </div>
         )}
       </div>
+
+      {/* Code execution approval section */}
+      <ExecApproval />
 
       {/* Footer hint */}
       {batches.length > 0 && (

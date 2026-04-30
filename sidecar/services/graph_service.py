@@ -111,6 +111,11 @@ def update_source_map(source_path: str, article_paths: list[str]) -> None:
     )
 
 
+def get_source_map() -> dict:
+    """Return full source→articles mapping as {source_path: [article_path, ...]}."""
+    return repo.graph_get_source_map()
+
+
 def get_articles_citing(source_path: str) -> list[str]:
     """Return all wiki article paths that cite a given source file."""
     return repo.graph_get_articles_citing(normalize_path(source_path))

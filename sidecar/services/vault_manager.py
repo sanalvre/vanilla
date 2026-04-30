@@ -85,6 +85,11 @@ DEFAULT_INDEX_MD = """# Wiki Index
 (No concepts yet. Approve proposals to populate this index.)
 """
 
+# Initial empty graph — written to wiki-vault/graph.json on vault creation.
+# The graph_service exports an updated copy here after every pipeline run so
+# the frontend force-graph can load it without hitting the SQLite API.
+DEFAULT_GRAPH_JSON = '{"nodes":[],"edges":[],"source_map":{}}'
+
 def create_vault_structure(
     base_path: str,
     ontology_content: Optional[str] = None,
@@ -118,6 +123,7 @@ def create_vault_structure(
     _write_if_missing(wiki_vault / "AGENTS.md", agents_content or DEFAULT_AGENTS_MD)
     _write_if_missing(wiki_vault / "ontology.md", ontology_content or DEFAULT_ONTOLOGY_MD)
     _write_if_missing(wiki_vault / "index.md", DEFAULT_INDEX_MD)
+    _write_if_missing(wiki_vault / "graph.json", DEFAULT_GRAPH_JSON)
 
     return {
         "clean_vault_path": normalize_path(str(clean_vault)),
@@ -150,7 +156,7 @@ def validate_vault_structure(base_path: str) -> List[str]:
     if not wiki_vault.exists():
         warnings.append("wiki-vault/ directory is missing")
     else:
-        for required in ["concepts", "staging", "AGENTS.md", "ontology.md", "index.md"]:
+        for required in ["concepts", "staging", "AGENTS.md", "ontology.md", "index.md", "graph.json"]:
             if not (wiki_vault / required).exists():
                 warnings.append(f"wiki-vault/{required} is missing")
 

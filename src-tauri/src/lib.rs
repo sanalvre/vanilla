@@ -3,12 +3,50 @@
 /// Handles:
 /// - Sidecar lifecycle: spawn the Python FastAPI process, read its port
 ///   from stdout, emit "sidecar-ready" event to frontend
-/// - Plugin registration (shell, fs, dialog)
+/// - Plugin registration (shell, fs, dialog, global-shortcut, clipboard)
+/// - Global hotkeys: Ctrl+Shift+Space (voice), Ctrl+Shift+V (clip clipboard)
 /// - Tauri command handlers
 
 use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandEvent;
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_updater::UpdaterExt;
+
+/// Check GitHub Releases for a newer version of VanillaDB.
+/// Returns `{ available: false }` if up-to-date, or
+/// `{ available: true, version: "x.y.z", notes: "..." }` if an update is ready.
+#[tauri::command]
+async fn check_for_update(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    match updater.check().await {
+        Ok(Some(update)) => Ok(serde_json::json!({
+            "available": true,
+            "version": update.version,
+            "current_version": update.current_version,
+            "notes": update.body.unwrap_or_default(),
+        })),
+        Ok(None) => Ok(serde_json::json!({ "available": false })),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Download and install the latest update, then relaunch.
+/// This is a fire-and-forget call — the app will restart on success.
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    let updater = app.updater().map_err(|e| e.to_string())?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "No update available".to_string())?;
+
+    update
+        .download_and_install(|_chunk, _total| {}, || {})
+        .await
+        .map_err(|e| e.to_string())
+}
 
 /// Get the app's data directory path (for SQLite, config, etc.)
 #[tauri::command]
@@ -87,16 +125,65 @@ fn spawn_sidecar(app: &tauri::AppHandle) {
     });
 }
 
+/// Register global hotkeys:
+///   Ctrl+Shift+Space → voice:start (press) / voice:stop (release)
+///   Ctrl+Shift+V     → tray:clip-clipboard
+fn register_shortcuts(app: &tauri::AppHandle) {
+    let app_handle = app.clone();
+
+    let voice_shortcut = Shortcut::new(
+        Some(Modifiers::CONTROL | Modifiers::SHIFT),
+        Code::Space,
+    );
+    let clip_shortcut = Shortcut::new(
+        Some(Modifiers::CONTROL | Modifiers::SHIFT),
+        Code::KeyV,
+    );
+
+    if let Err(e) = app_handle.global_shortcut().on_shortcuts(
+        [voice_shortcut, clip_shortcut],
+        move |app, shortcut, event| {
+            if shortcut.mods == Modifiers::CONTROL | Modifiers::SHIFT
+                && shortcut.key == Code::Space
+            {
+                match event.state() {
+                    ShortcutState::Pressed => {
+                        let _ = app.emit("voice:start", ());
+                    }
+                    ShortcutState::Released => {
+                        let _ = app.emit("voice:stop", ());
+                    }
+                }
+            } else if shortcut.mods == Modifiers::CONTROL | Modifiers::SHIFT
+                && shortcut.key == Code::KeyV
+            {
+                if event.state() == ShortcutState::Pressed {
+                    let _ = app.emit("tray:clip-clipboard", ());
+                }
+            }
+        },
+    ) {
+        eprintln!("[shortcuts] Failed to register global shortcuts: {}", e);
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .invoke_handler(tauri::generate_handler![
             get_app_data_dir,
+            check_for_update,
+            install_update,
         ])
         .setup(|app| {
+            // Register global keyboard shortcuts
+            register_shortcuts(&app.handle().clone());
+
             // Spawn the Python sidecar when the app window opens.
             // In dev mode (npm run tauri dev), skip this — the dev server
             // uses a manually started sidecar via VANILLA_DEV=1.

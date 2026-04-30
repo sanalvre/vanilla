@@ -234,6 +234,9 @@ async def execute_fileback(batch_id: str, config: VanillaConfig) -> dict:
             # Update individual article status
             repo.update_article_status(batch_id, md_file.name, "approved")
 
+            # Scan for <!-- exec --> code blocks and create exec_run records
+            _create_exec_runs_for_article(content, relative_dest)
+
             written_articles.append({"title": title, "filename": md_file.name})
             articles_written += 1
 
@@ -321,6 +324,46 @@ async def _refresh_hub_summaries(config: VanillaConfig) -> None:
             logger.info("Generated hub summary for '%s'", node["label"])
         except Exception as e:
             logger.warning("Hub summary generation failed for %s: %s", node_id, e)
+
+
+_EXEC_BLOCK_RE = re.compile(
+    r"<!--\s*exec\s*-->\s*```(\w+)\s*\n(.*?)```\s*<!--\s*/exec\s*-->",
+    re.DOTALL,
+)
+
+
+def _create_exec_runs_for_article(content: str, article_path: str) -> list[str]:
+    """
+    Scan article content for <!-- exec -->```lang ... ```<!-- /exec --> blocks.
+    Creates an exec_run record for each found block.
+
+    Idempotent: skips any block whose code already has a pending run for this
+    article (prevents duplicates when fileback runs on the same article twice).
+    Returns list of created run IDs (may be empty if all are already pending).
+    """
+    # Build a set of pending code blobs for this article to detect duplicates
+    existing_pending = {r["code"] for r in repo.get_pending_exec_runs_for_article(article_path)}
+
+    run_ids = []
+    for match in _EXEC_BLOCK_RE.finditer(content):
+        lang = match.group(1).strip()
+        code = match.group(2).strip()
+        if not lang or not code:
+            continue
+        if code in existing_pending:
+            logger.debug("Skipping duplicate exec run for %s (already pending)", article_path)
+            continue
+        run_id = repo.create_exec_run(article_path, code, lang)
+        existing_pending.add(code)  # prevent same block from being queued twice within one call
+        run_ids.append(run_id)
+        logger.info(
+            "Queued exec run %s for article %s (%s, %d chars)",
+            run_id,
+            article_path,
+            lang,
+            len(code),
+        )
+    return run_ids
 
 
 def _update_index(wiki_path: Path, new_articles: list[dict]) -> None:

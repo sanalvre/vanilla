@@ -139,6 +139,20 @@ CREATE TABLE IF NOT EXISTS hub_summaries (
     summary TEXT NOT NULL,
     updated_at INTEGER NOT NULL
 );
+
+-- Agent-initiated code execution runs (approval-gated)
+CREATE TABLE IF NOT EXISTS exec_runs (
+    id TEXT PRIMARY KEY,
+    article_path TEXT NOT NULL,
+    code TEXT NOT NULL,
+    lang TEXT NOT NULL DEFAULT 'python',
+    status TEXT DEFAULT 'pending',
+    stdout TEXT DEFAULT '',
+    stderr TEXT DEFAULT '',
+    exit_code INTEGER,
+    created_at INTEGER NOT NULL,
+    run_at INTEGER
+);
 """
 
 

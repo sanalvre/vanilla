@@ -184,7 +184,7 @@ def create_agent_run(run_id: str, trigger_path: Optional[str] = None) -> None:
         conn.execute(
             """INSERT INTO agent_runs (run_id, trigger_path, status, started_at)
                VALUES (?, ?, 'running', ?)""",
-            (run_id, trigger_path, int(time.time())),
+            (run_id, trigger_path, int(time.time() * 1000)),
         )
         conn.commit()
 
@@ -523,6 +523,18 @@ def graph_get_articles_citing(source_path: str) -> list[str]:
     return [r["article_path"] for r in rows]
 
 
+def graph_get_source_map() -> dict:
+    """Return source→articles mapping as {source_path: [article_path, ...]}."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT source_path, article_path FROM graph_source_map ORDER BY source_path"
+    ).fetchall()
+    result: dict = {}
+    for row in rows:
+        result.setdefault(row["source_path"], []).append(row["article_path"])
+    return result
+
+
 def graph_get_all_source_paths() -> list[str]:
     """Return all source file paths that have at least one citation."""
     conn = get_connection()
@@ -718,3 +730,69 @@ def hybrid_search(
                 })
 
     return results
+
+
+# ─── Exec Runs CRUD ────────────────────────────────────────────────
+
+
+def get_pending_exec_runs_for_article(article_path: str) -> list[dict]:
+    """Return all pending exec runs for a specific article."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM exec_runs WHERE article_path = ? AND status = 'pending'",
+        (article_path,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def create_exec_run(article_path: str, code: str, lang: str = "python") -> str:
+    """Create a pending exec run and return its ID."""
+    import uuid as _uuid
+    run_id = f"exec_{_uuid.uuid4().hex[:12]}"
+    with _write_lock:
+        conn = get_connection()
+        conn.execute(
+            """INSERT INTO exec_runs (id, article_path, code, lang, status, created_at)
+               VALUES (?, ?, ?, ?, 'pending', ?)""",
+            (run_id, article_path, code, lang, int(time.time())),
+        )
+        conn.commit()
+    logger.info("Created exec run: %s (%s, %d chars)", run_id, lang, len(code))
+    return run_id
+
+
+def update_exec_run(
+    run_id: str,
+    status: str,
+    stdout: str = "",
+    stderr: str = "",
+    exit_code: Optional[int] = None,
+) -> None:
+    """Update exec run status and output."""
+    with _write_lock:
+        conn = get_connection()
+        conn.execute(
+            """UPDATE exec_runs
+               SET status=?, stdout=?, stderr=?, exit_code=?, run_at=?
+               WHERE id=?""",
+            (status, stdout, stderr, exit_code, int(time.time()), run_id),
+        )
+        conn.commit()
+
+
+def get_exec_run(run_id: str) -> Optional[dict]:
+    """Get a single exec run by ID."""
+    conn = get_connection()
+    row = conn.execute(
+        "SELECT * FROM exec_runs WHERE id = ?", (run_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def get_pending_exec_runs() -> list[dict]:
+    """Return all exec runs with status 'pending'."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM exec_runs WHERE status = 'pending' ORDER BY created_at"
+    ).fetchall()
+    return [dict(r) for r in rows]

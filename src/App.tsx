@@ -17,7 +17,11 @@ import { CommandPalette } from "./components/command/CommandPalette";
 import { Logo } from "./components/layout/Logo";
 import { SearchPanel } from "./components/layout/SearchPanel";
 import { SettingsPanel } from "./components/settings/SettingsPanel";
+import { SidebarRail, type SidebarPanel } from "./components/layout/SidebarRail";
+import { ResearchPanel } from "./components/layout/ResearchPanel";
+import { VoiceButton } from "./components/layout/VoiceButton";
 import { useTauriSidecar } from "./hooks/useTauriSidecar";
+import { useVoiceStore } from "./stores/voiceStore";
 
 // Lazy load graph (pulls Three.js ~500KB)
 const GraphPanel = lazy(() =>
@@ -44,6 +48,8 @@ function App() {
 
   // Wire Tauri sidecar port discovery (no-op in browser dev mode)
   useTauriSidecar();
+
+  const isVoiceRecording = useVoiceStore((s) => s.isRecording);
 
   const { isDark, toggle: toggleDark } = useThemeStore();
 
@@ -86,8 +92,10 @@ function App() {
 
   // Proposal panel visibility
   const [proposalPanelOpen, setProposalPanelOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+
+  // Sidebar panel state (replaces searchOpen boolean)
+  const [activePanel, setActivePanel] = useState<SidebarPanel>("files");
 
   // Listen for command palette opening proposals
   useEffect(() => {
@@ -151,6 +159,32 @@ function App() {
     }
   }, [cleanVaultPath, wikiVaultPath]);
 
+  // Ambient clipboard clip — triggered by Tauri tray:clip-clipboard event
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+
+    (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const { readText } = await import("@tauri-apps/plugin-clipboard-manager");
+        const { clipToVault } = await import("./stores/ambientStore");
+
+        unlisten = await listen("tray:clip-clipboard", async () => {
+          try {
+            const text = await readText();
+            if (text) await clipToVault(text);
+          } catch (e) {
+            console.warn("Clipboard clip failed:", e);
+          }
+        });
+      } catch {
+        // Not running inside Tauri — ignore
+      }
+    })();
+
+    return () => unlisten?.();
+  }, []);
+
   // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -167,7 +201,7 @@ function App() {
       // Cmd/Ctrl+Shift+F — toggle search
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "f") {
         e.preventDefault();
-        setSearchOpen((o) => !o);
+        setActivePanel((p) => p === "search" ? "files" : "search");
       }
     };
     document.addEventListener("keydown", handler);
@@ -189,7 +223,7 @@ function App() {
     >
       <div className="flex h-full flex-col">
         {/* Top bar */}
-        <header className="flex items-center justify-between border-b border-stone-200 bg-white px-4 py-2 dark:border-zinc-700 dark:bg-zinc-900">
+        <header className="flex items-center justify-between border-b border-[var(--glass-border)] bg-[var(--glass-bg-strong)] px-4 py-2 backdrop-blur-md dark:border-zinc-700/50">
           <Logo variant="full" size="lg" />
           <div className="flex items-center gap-2 text-sm text-stone-500 dark:text-zinc-400">
             {initialized && sidecarConnected && (
@@ -281,43 +315,38 @@ function App() {
             />
           ) : (
             <div className="flex flex-1 dark:bg-zinc-900">
-              {/* Left sidebar — search + file tree */}
-              <aside className="flex w-56 shrink-0 flex-col border-r border-stone-200 bg-white dark:border-zinc-700 dark:bg-zinc-900">
-                {/* Sidebar header: search toggle */}
-                <div className="flex items-center gap-1 border-b border-stone-100 px-2 py-1.5 dark:border-zinc-800">
-                  <button
-                    onClick={() => setSearchOpen((o) => !o)}
-                    title="Search (Ctrl+Shift+F)"
-                    className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-xs transition-colors ${
-                      searchOpen
-                        ? "bg-stone-200 text-stone-700 dark:bg-zinc-700 dark:text-zinc-200"
-                        : "text-stone-400 hover:bg-stone-100 hover:text-stone-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
-                    }`}
-                  >
-                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none">
-                      <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.5" />
-                      <line x1="10" y1="10" x2="14" y2="14" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    </svg>
-                    Search
-                  </button>
-                </div>
-
-                {/* Body: search results or file tree */}
-                <div className="flex-1 overflow-y-auto">
-                  {searchOpen ? (
-                    <SearchPanel onClose={() => setSearchOpen(false)} />
-                  ) : (
-                    <div className="px-2 py-1">
-                      <FileTree />
-                    </div>
-                  )}
-                </div>
-
-                {/* Ingestion status at bottom of sidebar */}
-                <IngestStatus
-                  jobs={ingestJobs}
-                  onJobComplete={handleJobComplete}
+              {/* Left sidebar — icon rail + content panel */}
+              <aside className="flex w-56 shrink-0 border-r border-[var(--glass-border)] bg-[var(--glass-bg)] backdrop-blur-md dark:border-zinc-700/40">
+                {/* Icon rail */}
+                <SidebarRail
+                  activePanel={activePanel}
+                  onPanelChange={setActivePanel}
+                  isRecording={isVoiceRecording}
+                  onVoiceClick={() =>
+                    window.dispatchEvent(new CustomEvent("vanilla:voice-toggle"))
+                  }
                 />
+
+                {/* Content panel */}
+                <div className="flex flex-1 flex-col overflow-hidden">
+                  <div className="flex-1 overflow-y-auto">
+                    {activePanel === "search" ? (
+                      <SearchPanel onClose={() => setActivePanel("files")} />
+                    ) : activePanel === "research" ? (
+                      <ResearchPanel onIngestStarted={handleIngestStarted} />
+                    ) : (
+                      <div className="px-2 py-1">
+                        <FileTree />
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Ingestion status at bottom of sidebar */}
+                  <IngestStatus
+                    jobs={ingestJobs}
+                    onJobComplete={handleJobComplete}
+                  />
+                </div>
               </aside>
 
               {/* Right area — graph + editor or proposals */}
@@ -394,6 +423,9 @@ function App() {
         {settingsOpen && (
           <SettingsPanel onClose={() => setSettingsOpen(false)} />
         )}
+
+        {/* Voice transcription controller — no visible UI, listens for Tauri hotkey events */}
+        <VoiceButton />
       </div>
     </DropZone>
   );
